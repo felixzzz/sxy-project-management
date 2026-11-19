@@ -96,8 +96,8 @@ VALUES (
   '11111111-1111-1111-1111-111111111111',
   'Sekolah Guang Ming Pusat',
   'Kawasan Proyek Sekolah Guang Ming Pusat',
-  -6.1432,   -- Default sample coordinates (dapat disesuaikan di Admin Site Settings)
-  106.7215,
+  -6.1386571, -- Koordinat Proyek Sekolah Guang Ming Pusat
+  106.7420345,
   100        -- Radius 100 meter
 ) ON CONFLICT (id) DO NOTHING;
 
