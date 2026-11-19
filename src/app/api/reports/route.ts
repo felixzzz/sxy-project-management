@@ -16,11 +16,7 @@ export async function GET(req: NextRequest) {
       if (supabase) {
         let query = supabase
           .from('daily_site_reports')
-          .select(`
-            *,
-            reporter:profiles(id, full_name, email, role, job_position, avatar_url),
-            site:project_sites(id, name, address, latitude, longitude, radius_meters)
-          `)
+          .select('*')
           .order('created_at', { ascending: false });
 
         if (date) {
@@ -33,9 +29,24 @@ export async function GET(req: NextRequest) {
           query = query.eq('site_id', siteId);
         }
 
-        const { data, error } = await query;
-        if (!error && data && data.length > 0) {
-          return NextResponse.json({ success: true, data });
+        const { data: rawReports, error } = await query;
+        if (!error && rawReports && rawReports.length > 0) {
+          // Ambil profil & site untuk enrich data pelapor
+          const { data: allProfiles } = await supabase.from('profiles').select('*');
+          const { data: allSites } = await supabase.from('project_sites').select('*');
+
+          const enriched = rawReports.map((r: any) => ({
+            ...r,
+            reporter: (allProfiles || MOCK_USERS).find((p) => p.id === r.reporter_id) || {
+              id: r.reporter_id,
+              full_name: 'Staff Lapangan',
+              role: 'staff',
+              job_position: 'Pengawas Lapangan',
+            },
+            site: (allSites || [DEFAULT_SITE]).find((s) => s.id === r.site_id) || DEFAULT_SITE,
+          }));
+
+          return NextResponse.json({ success: true, data: enriched });
         }
       }
     }
@@ -217,11 +228,7 @@ export async function POST(req: NextRequest) {
             documentation_photos: processedPhotos,
             photos: processedPhotos,
           })
-          .select(`
-            *,
-            reporter:profiles(id, full_name, email, role, job_position, avatar_url),
-            site:project_sites(id, name, address, latitude, longitude, radius_meters)
-          `)
+          .select('*')
           .single();
 
         // Jika ada error kolom skema lama, coba fallback insert dengan kolom dasar
@@ -245,11 +252,7 @@ export async function POST(req: NextRequest) {
               documentation_photos: processedPhotos,
               photos: processedPhotos,
             })
-            .select(`
-              *,
-              reporter:profiles(id, full_name, email, role, job_position, avatar_url),
-              site:project_sites(id, name, address, latitude, longitude, radius_meters)
-            `)
+            .select('*')
             .single();
 
           if (!fallbackRes.error && fallbackRes.data) {
@@ -278,7 +281,25 @@ export async function POST(req: NextRequest) {
         }
 
         if (data) {
-          return NextResponse.json({ success: true, data });
+          // Ambil profil pelapor untuk melengkapi response
+          const { data: userProf } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', safeReporterId)
+            .maybeSingle();
+
+          const enrichedReport = {
+            ...data,
+            reporter: userProf || {
+              id: safeReporterId,
+              full_name: 'Staff Lapangan',
+              role: 'staff',
+              job_position: 'Pengawas Lapangan',
+            },
+            site: DEFAULT_SITE,
+          };
+
+          return NextResponse.json({ success: true, data: enrichedReport });
         }
       }
     }
