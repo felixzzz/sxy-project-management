@@ -16,14 +16,21 @@ Web application absensi staf proyek berbasis **Geofencing GPS presisi** dan **Fo
    - Menghalangi pemilihan gambar dari galeri/penyimpanan lokal HP.
    - **Watermarking Otomatis:** Nama staff, tanggal/waktu (WIB), koordinat GPS (lat, lng), dan jarak dari site dicetak langsung ke dalam foto secara permanen.
 
-3. **Portal Akses Admin & Manajemen**:
+3. **Laporan Harian Proyek & Site Diary (Dokumentasi Lapangan)**:
+   - Pencatatan kondisi cuaca lapangan (☀️ Cerah, ⛅ Mendung, 🌧️ Hujan Ringan, ⛈️ Hujan Lebat).
+   - **Headcount Tenaga Kerja Mandor:** Menghitung jumlah tukang/pekerja harian lepas di bawah supervisi mandor.
+   - **Kamera Fisik Lapangan:** Menggunakan kamera belakang HP (`facingMode: "environment"`) untuk memotret hasil pekerjaan fisik (bekisting, pembesian, cor, galian) dengan stempel watermark resmi Yayasan Guang Ji, zona proyek, cuaca, dan GPS.
+   - Pencatatan uraian pekerjaan selesai, rencana esok hari, dan kendala lapangan.
+
+4. **Portal Akses Admin & Monitoring Terpadu**:
    - **Live Attendance Feed:** Log kehadiran seluruh staf dan mandor secara realtime hari ini.
-   - **Zoom Bukti Foto:** Inspeksi foto selfie lapangan beserta watermarknya.
+   - **Site Diary & Field Operations:** Korelasi presensi pengawas dengan headcount tukang di lapangan dan dokumentasi foto progres.
+   - **Galeri Foto Lapangan:** Inspeksi visual hasil pekerjaan dan verifikasi watermark satelit GPS.
    - **Pengaturan Site & Radius:** Admin dapat mengubah koordinat lokasi Sekolah Guang Ming Pusat dan mengatur radius toleransi langsung dari slider UI.
-   - **Export Rekapitulasi:** Ekspor data kehadiran ke format CSV/Excel untuk kebutuhan payroll atau mandor.
+   - **Export Rekapitulasi:** Ekspor data kehadiran dan log proyek ke format CSV/Excel serta format Cetak PDF Resmi.
    - **Manajemen Staff:** Kelola data staf, peran (admin/mandor/staff), dan status kerja.
 
-4. **Desain Mobile-First & Anti-AI Slop**:
+5. **Desain Mobile-First & Anti-AI Slop**:
    - Mematuhi standar aksesibilitas WCAG (touch target $\ge 44\text{px}$ pada layar sentuh).
    - Dynamic viewport (`100dvh`) dan safe-area insets (`env(safe-area-inset-bottom)`) agar nyaman digunakan di browser mobile.
    - Tipografi monospaced tabular untuk angka jam dan jarak agar tidak terjadi layout shift.
@@ -74,8 +81,9 @@ Jika proyek Supabase Anda sudah siap:
 ## 📱 Panduan Navigasi Halaman
 
 - **`/` (Beranda Staff)**: Dashboard absensi staff, jam digital, radar geofence, mini peta, dan tombol kamera selfie.
+- **`/laporan`**: Formulir input laporan harian lapangan (Site Diary), headcount pekerja, cuaca, dan kamera dokumentasi fisik GPS.
 - **`/riwayat`**: Riwayat kehadiran pribadi staff beserta thumbnail foto bukti.
-- **`/admin`**: Dashboard monitoring admin, log kehadiran realtime, export CSV.
+- **`/admin`**: Dashboard monitoring admin, log kehadiran, monitoring site diary, galeri progres, dan export CSV/PDF.
 - **`/admin/site`**: Halaman konfigurasi koordinat dan slider radius site Sekolah Guang Ming Pusat.
 - **`/admin/staff`**: Manajemen akun staff dan mandor proyek.
 - **`/login`**: Halaman login dan akses cepat demo persona.

@@ -110,11 +110,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH: Perbarui data profil staf, role, jabatan, status aktif/nonaktif, atau reset password
+// PATCH / PUT: Perbarui data profil staf, role, jabatan, status aktif/nonaktif, atau reset password
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, fullName, role, jobPosition, phoneNumber, isActive, password } = body;
+    const id = body.id || body.userId;
+    const { fullName, role, jobPosition, phoneNumber, isActive, password } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'ID staff wajib disertakan.' }, { status: 400 });
@@ -162,7 +163,10 @@ export async function PATCH(req: NextRequest) {
 
     // 2. Perbarui Auth jika ada perubahan password atau user metadata
     const authUpdates: Record<string, unknown> = {};
-    if (password && password.trim().length >= 6) {
+    if (password && password.trim().length > 0) {
+      if (password.trim().length < 6) {
+        return NextResponse.json({ error: 'Kata sandi minimal 6 karakter.' }, { status: 400 });
+      }
       authUpdates.password = password.trim();
     }
     if (fullName || role || jobPosition) {
@@ -192,11 +196,23 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
+// Alias PUT ke PATCH agar support kedua HTTP method
+export const PUT = PATCH;
+
 // DELETE: Hapus akun staff secara permanen
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
+    let id = searchParams.get('id') || searchParams.get('userId');
+
+    if (!id) {
+      try {
+        const body = await req.json();
+        id = body?.id || body?.userId;
+      } catch {
+        // Body mungkin kosong jika dikirim melalui URL
+      }
+    }
 
     if (!id) {
       return NextResponse.json({ error: 'Parameter id wajib ada.' }, { status: 400 });

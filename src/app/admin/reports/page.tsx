@@ -1,0 +1,14 @@
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function AdminReportsPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/admin?tab=reports');
+  }, [router]);
+
+  return null;
+}

@@ -228,3 +228,131 @@ CREATE POLICY "Allow select attendance photos"
   ON storage.objects FOR SELECT
   TO public
   USING (bucket_id = 'attendance-photos');
+
+-- ==============================================================================
+-- MODUL 2: OPERASIONAL PROYEK & LAPORAN HARIAN LAPANGAN (DAILY SITE REPORT)
+-- ==============================================================================
+
+-- 9. TABEL ZONA PROYEK (PROJECT ZONES)
+CREATE TABLE IF NOT EXISTS public.project_zones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    site_id UUID,
+    name TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- SEED ZONA DEFAULT SEKOLAH GUANG MING PUSAT
+INSERT INTO public.project_zones (site_id, name)
+VALUES 
+  ('11111111-1111-1111-1111-111111111111', 'Gedung Utama - Lantai 1 (Lobby & Kelas)'),
+  ('11111111-1111-1111-1111-111111111111', 'Gedung Utama - Lantai 2 (Laboratorium)'),
+  ('11111111-1111-1111-1111-111111111111', 'Gedung Olahraga & Auditorium'),
+  ('11111111-1111-1111-1111-111111111111', 'Area Pagar Keliling & Saluran Luar')
+ON CONFLICT DO NOTHING;
+
+-- 10. TABEL LAPORAN HARIAN LAPANGAN (DAILY SITE REPORTS)
+CREATE TABLE IF NOT EXISTS public.daily_site_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    site_id UUID,
+    reporter_id UUID NOT NULL,
+    report_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    work_day_name TEXT DEFAULT 'Selasa',
+    work_hours TEXT DEFAULT 'Jam 08.00 sd 17.00 WIB',
+    contractor_name TEXT DEFAULT 'PT. BERCA BUANA SAKTI',
+    zone_name TEXT NOT NULL,
+    work_category TEXT DEFAULT 'PEKERJAAN PERSIAPAN',
+    work_items JSONB,
+    staff_breakdown JSONB,
+    manpower_breakdown JSONB,
+    weather_timeline JSONB,
+    staff_total INTEGER DEFAULT 17,
+    manpower_total INTEGER DEFAULT 25,
+    total_workers INTEGER DEFAULT 42,
+    weather_condition TEXT NOT NULL CHECK (weather_condition IN ('sunny', 'cloudy', 'rainy', 'heavy_rain')) DEFAULT 'sunny',
+    worker_headcount INTEGER DEFAULT 25,
+    work_completed TEXT NOT NULL,
+    work_planned_tomorrow TEXT,
+    obstacles TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    photo_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Kolom tambahan idempotent untuk table yang sudah terlanjur dibuat
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS work_day_name TEXT DEFAULT 'Selasa';
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS work_hours TEXT DEFAULT 'Jam 08.00 sd 17.00 WIB';
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS contractor_name TEXT DEFAULT 'PT. BERCA BUANA SAKTI';
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS work_category TEXT DEFAULT 'PEKERJAAN PERSIAPAN';
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS work_items JSONB;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS staff_breakdown JSONB;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS manpower_breakdown JSONB;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS weather_timeline JSONB;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS staff_total INTEGER DEFAULT 17;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS manpower_total INTEGER DEFAULT 25;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS total_workers INTEGER DEFAULT 42;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS documentation_photos JSONB;
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS photos JSONB;
+
+-- Lepaskan foreign key ketat jika ada
+ALTER TABLE public.daily_site_reports DROP CONSTRAINT IF EXISTS daily_site_reports_reporter_id_fkey;
+ALTER TABLE public.daily_site_reports DROP CONSTRAINT IF EXISTS daily_site_reports_site_id_fkey;
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_reports_report_date ON public.daily_site_reports(report_date DESC);
+CREATE INDEX IF NOT EXISTS idx_reports_reporter_id ON public.daily_site_reports(reporter_id);
+CREATE INDEX IF NOT EXISTS idx_reports_site_id ON public.daily_site_reports(site_id);
+
+-- 11. STORAGE BUCKET UNTUK FOTO DOKUMENTASI LAPORAN HARIAN
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('site-reports', 'site-reports', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 12. RLS & POLICIES UNTUK ZONA & LAPORAN HARIAN
+ALTER TABLE public.project_zones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.daily_site_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Project zones readable by public" ON public.project_zones;
+CREATE POLICY "Project zones readable by public"
+  ON public.project_zones FOR SELECT
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Allow select daily reports" ON public.daily_site_reports;
+CREATE POLICY "Allow select daily reports"
+  ON public.daily_site_reports FOR SELECT
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Allow insert daily reports" ON public.daily_site_reports;
+CREATE POLICY "Allow insert daily reports"
+  ON public.daily_site_reports FOR INSERT
+  TO public
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow update daily reports" ON public.daily_site_reports;
+CREATE POLICY "Allow update daily reports"
+  ON public.daily_site_reports FOR UPDATE
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Allow delete daily reports" ON public.daily_site_reports;
+CREATE POLICY "Allow delete daily reports"
+  ON public.daily_site_reports FOR DELETE
+  TO public
+  USING (true);
+
+-- Storage policies untuk site-reports
+DROP POLICY IF EXISTS "Allow upload site report photos" ON storage.objects;
+CREATE POLICY "Allow upload site report photos"
+  ON storage.objects FOR INSERT
+  TO public
+  WITH CHECK (bucket_id = 'site-reports');
+
+DROP POLICY IF EXISTS "Allow select site report photos" ON storage.objects;
+CREATE POLICY "Allow select site report photos"
+  ON storage.objects FOR SELECT
+  TO public
+  USING (bucket_id = 'site-reports');
+

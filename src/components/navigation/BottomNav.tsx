@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Clock, History, Shield, Settings } from 'lucide-react';
+import { Clock, History, Shield, Settings, FileText } from 'lucide-react';
 import { UserRole } from '@/types/attendance';
 
 interface BottomNavProps {
@@ -19,6 +19,12 @@ export function BottomNav({ userRole }: BottomNavProps) {
       href: '/',
       icon: Clock,
       isActive: pathname === '/',
+    },
+    {
+      label: 'Laporan',
+      href: '/laporan',
+      icon: FileText,
+      isActive: pathname === '/laporan',
     },
     {
       label: 'Riwayat',

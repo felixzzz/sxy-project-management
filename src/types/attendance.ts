@@ -82,3 +82,98 @@ export interface GeolocationState {
   isWithinRadius: boolean;
   errorMessage?: string;
 }
+
+export type WeatherCondition = 'sunny' | 'cloudy' | 'rainy' | 'heavy_rain';
+
+export interface ProjectZone {
+  id: string;
+  site_id: string;
+  name: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface WorkerCategoryItem {
+  id: string;
+  name: string;
+  count: number;
+  unit?: string;
+}
+
+export type StaffBreakdown =
+  | WorkerCategoryItem[]
+  | {
+      pm?: number;
+      sm?: number;
+      eng?: number;
+      hse?: number;
+      qs?: number;
+      admin?: number;
+      drafter?: number;
+      spv?: number;
+      survey?: number;
+      ass_survey?: number;
+      logistics?: number;
+      mekanik?: number;
+      security?: number;
+      [key: string]: any;
+    };
+
+export type ManpowerBreakdown =
+  | WorkerCategoryItem[]
+  | {
+      pekerja_sipil?: number;
+      k3?: number;
+      operator_excavator?: number;
+      operator_crane?: number;
+      lainnya?: number;
+      [key: string]: any;
+    };
+
+export interface WeatherTimelineItem {
+  id?: string;
+  start_time?: string;
+  end_time?: string;
+  time_range: string;
+  condition: string;
+}
+
+export interface ReportPhotoItem {
+  id: string;
+  url: string;
+  caption: string;
+  created_at?: string;
+}
+
+export interface DailySiteReport {
+  id: string;
+  site_id: string;
+  site?: ProjectSite;
+  reporter_id: string;
+  reporter?: UserProfile;
+  report_date: string;
+  work_day_name?: string; // e.g. "Selasa"
+  work_hours?: string; // e.g. "Jam 08.00 sd 17.00 WIB"
+  contractor_name?: string; // e.g. "PT. BERCA BUANA SAKTI"
+  zone_name: string;
+  weather_condition: WeatherCondition;
+  weather_timeline?: WeatherTimelineItem[];
+  worker_headcount: number; // total manpower
+  staff_total?: number;
+  manpower_total?: number;
+  total_workers?: number;
+  staff_breakdown?: StaffBreakdown;
+  manpower_breakdown?: ManpowerBreakdown;
+  work_category?: string; // e.g. "PEKERJAAN PERSIAPAN"
+  work_items?: string[];
+  work_completed: string;
+  work_planned_tomorrow?: string;
+  obstacles?: string;
+  latitude: number;
+  longitude: number;
+  photo_url: string; // Primary photo (backward-compatibility)
+  photos?: ReportPhotoItem[]; // Multiple progress photos with captions
+  documentation_photos?: ReportPhotoItem[]; // Alias for Supabase column
+  created_at: string;
+}
+

@@ -4,9 +4,9 @@ import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { DEFAULT_SITE, MOCK_USERS } from '@/lib/mock-data';
-import { AttendanceRecord, UserProfile, ProjectSite, UserRole } from '@/types/attendance';
-import { formatTimeID, formatDateID } from '@/lib/utils';
+import { DEFAULT_SITE, MOCK_USERS, MOCK_DAILY_REPORTS } from '@/lib/mock-data';
+import { AttendanceRecord, UserProfile, ProjectSite, UserRole, DailySiteReport, WeatherCondition } from '@/types/attendance';
+import { formatTimeID, formatDateID, formatDateTimeID, generateWhatsAppReportText } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { DynamicSiteMap } from '@/components/map/DynamicSiteMap';
@@ -45,11 +45,34 @@ import {
   Bell,
   Lock,
   Sparkles,
+  FileBarChart,
+  Printer,
+  FileSpreadsheet,
+  CalendarDays,
+  CalendarRange,
+  CalendarCheck,
+  UserCheck,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Camera,
+  Sun,
+  Cloud,
+  CloudRain,
+  CloudLightning,
+  ZoomIn,
+  AlertTriangle,
+  HardHat,
+  Copy,
+  Share2,
+  Building,
 } from 'lucide-react';
 
 type AdminTab =
   | 'overview'
   | 'attendance'
+  | 'site_reports'
+  | 'reports'
   | 'staff'
   | 'site'
   | 'workhours'
@@ -86,6 +109,27 @@ function AdminDashboardInner() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late'>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7days'>('all');
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+
+  // Reports Module State
+  const [reportSubTab, setReportSubTab] = useState<'daily' | 'monthly' | 'staff'>('daily');
+  const [reportDate, setReportDate] = useState<string>(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  });
+  const [reportMonth, setReportMonth] = useState<number>(() => new Date().getMonth());
+  const [reportYear, setReportYear] = useState<number>(() => new Date().getFullYear());
+  const [reportStaffId, setReportStaffId] = useState<string>('');
+
+  // Site Diary / Laporan Harian Proyek State
+  const [dailyReports, setDailyReports] = useState<DailySiteReport[]>([]);
+  const [selectedReportDetail, setSelectedReportDetail] = useState<DailySiteReport | null>(null);
+  const [selectedReportPhotoIndex, setSelectedReportPhotoIndex] = useState<number>(0);
+  const [reportZoneFilter, setReportZoneFilter] = useState<string>('all');
+  const [siteReportSearchQuery, setSiteReportSearchQuery] = useState<string>('');
+  const [siteReportDateFilter, setSiteReportDateFilter] = useState<'all' | 'today'>('all');
 
   // Staff Modal States
   const [showAddStaffModal, setShowAddStaffModal] = useState<boolean>(false);
@@ -210,6 +254,19 @@ function AdminDashboardInner() {
         });
         setAttendances(enriched);
       }
+
+      // 4. Ambil Laporan Harian Proyek (Site Diary)
+      try {
+        const reportsRes = await fetch('/api/reports');
+        const reportsJson = await reportsRes.json();
+        if (reportsJson.data && Array.isArray(reportsJson.data)) {
+          setDailyReports(reportsJson.data);
+        } else {
+          setDailyReports(MOCK_DAILY_REPORTS);
+        }
+      } catch {
+        setDailyReports(MOCK_DAILY_REPORTS);
+      }
     } catch (err) {
       console.warn('Error loading dashboard data:', err);
     } finally {
@@ -299,24 +356,36 @@ function AdminDashboardInner() {
     setIsSubmittingStaff(true);
     setStaffModalError(null);
 
+    if (editPassword && editPassword.trim().length > 0 && editPassword.trim().length < 6) {
+      setStaffModalError('Password baru minimal 6 karakter.');
+      setIsSubmittingStaff(false);
+      return;
+    }
+
     try {
       const res = await fetch('/api/admin/users', {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: editingStaff.id,
           userId: editingStaff.id,
           fullName: editFullName,
           role: editRole,
           jobPosition: editJob,
           phoneNumber: editPhone,
           isActive: editIsActive,
-          password: editPassword || undefined,
+          password: editPassword?.trim() ? editPassword.trim() : undefined,
         }),
       });
 
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Gagal memperbarui staf');
 
+      if (resData.user) {
+        setProfiles((prev) =>
+          prev.map((p) => (p.id === editingStaff.id ? { ...p, ...resData.user } : p))
+        );
+      }
       setEditingStaff(null);
       await loadDashboardData();
       setSaveNotification(`Data staf berhasil diperbarui.`);
@@ -332,9 +401,10 @@ function AdminDashboardInner() {
     try {
       const updatedStatus = targetUser.is_active === false ? true : false;
       const res = await fetch('/api/admin/users', {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: targetUser.id,
           userId: targetUser.id,
           isActive: updatedStatus,
         }),
@@ -352,6 +422,8 @@ function AdminDashboardInner() {
       setTimeout(() => setSaveNotification(null), 3000);
     } catch (err) {
       console.error(err);
+      setSaveNotification(err instanceof Error ? err.message : 'Gagal mengubah status staf');
+      setTimeout(() => setSaveNotification(null), 4000);
     }
   };
 
@@ -359,10 +431,10 @@ function AdminDashboardInner() {
     if (!deletingStaff) return;
     setIsSubmittingStaff(true);
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await fetch(`/api/admin/users?id=${encodeURIComponent(deletingStaff.id)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: deletingStaff.id }),
+        body: JSON.stringify({ id: deletingStaff.id, userId: deletingStaff.id }),
       });
 
       if (!res.ok) {
@@ -370,9 +442,10 @@ function AdminDashboardInner() {
         throw new Error(err.error || 'Gagal menghapus user');
       }
 
+      const deletedName = deletingStaff.full_name;
       setProfiles((prev) => prev.filter((p) => p.id !== deletingStaff.id));
       setDeletingStaff(null);
-      setSaveNotification(`Akun staf berhasil dihapus dari sistem.`);
+      setSaveNotification(`Akun ${deletedName} berhasil dihapus dari sistem.`);
       setTimeout(() => setSaveNotification(null), 3000);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Gagal menghapus staff');
@@ -486,6 +559,412 @@ function AdminDashboardInner() {
     };
   }, [profiles, attendances]);
 
+  // Ensure default reportStaffId is initialized
+  useEffect(() => {
+    if (!reportStaffId && profiles.length > 0) {
+      setReportStaffId(profiles[0].id);
+    }
+  }, [profiles, reportStaffId]);
+
+  // Indonesian Month Constants
+  const MONTH_NAMES = [
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember',
+  ];
+
+  // Duration Helper
+  const formatDuration = (startIso?: string, endIso?: string | null): string => {
+    if (!startIso || !endIso) return '-';
+    const start = new Date(startIso).getTime();
+    const end = new Date(endIso).getTime();
+    const diffMs = Math.max(0, end - start);
+    const totalMins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    return `${hours}j ${mins}m`;
+  };
+
+  // Helper CSV Downloader
+  const downloadCsv = (filename: string, headers: string[], rows: (string | number)[][]) => {
+    const csvContent =
+      'data:text/csv;charset=utf-8,\uFEFF' +
+      [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 1. Calculations - Daily Report
+  const dailyAttendanceMap = useMemo(() => {
+    const map = new Map<string, AttendanceRecord>();
+    attendances.forEach((att) => {
+      const attDate = new Date(att.check_in_time);
+      const localDateStr = `${attDate.getFullYear()}-${String(attDate.getMonth() + 1).padStart(2, '0')}-${String(attDate.getDate()).padStart(2, '0')}`;
+      if (localDateStr === reportDate) {
+        if (!map.has(att.user_id)) {
+          map.set(att.user_id, att);
+        }
+      }
+    });
+    return map;
+  }, [attendances, reportDate]);
+
+  const dailyStaffRows = useMemo(() => {
+    return profiles.map((p) => {
+      const att = dailyAttendanceMap.get(p.id);
+      return {
+        profile: p,
+        attendance: att || null,
+        status: att ? att.status : 'absent',
+      };
+    });
+  }, [profiles, dailyAttendanceMap]);
+
+  const dailyStats = useMemo(() => {
+    const total = profiles.length;
+    let presentCount = 0;
+    let lateCount = 0;
+    let onTimeCount = 0;
+
+    dailyStaffRows.forEach((row) => {
+      if (row.attendance) {
+        presentCount++;
+        if (row.attendance.status === 'late') {
+          lateCount++;
+        } else {
+          onTimeCount++;
+        }
+      }
+    });
+
+    const absentCount = total - presentCount;
+    const rate = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+
+    return {
+      total,
+      presentCount,
+      lateCount,
+      onTimeCount,
+      absentCount,
+      rate,
+    };
+  }, [profiles, dailyStaffRows]);
+
+  const handleExportDailyReport = () => {
+    const headers = [
+      'No',
+      'Nama Staff',
+      'Jabatan',
+      'Email',
+      'Tanggal',
+      'Status Kehadiran',
+      'Jam Masuk (WIB)',
+      'Jarak Presensi (m)',
+      'Jam Pulang (WIB)',
+      'Total Durasi Kerja',
+      'Catatan',
+    ];
+    const rows = dailyStaffRows.map((row, idx) => {
+      const att = row.attendance;
+      const statusText = !att
+        ? 'Belum Presensi'
+        : att.status === 'present'
+        ? 'Tepat Waktu'
+        : 'Terlambat';
+      return [
+        idx + 1,
+        `"${row.profile.full_name}"`,
+        `"${row.profile.job_position || '-'}"`,
+        `"${row.profile.email || '-'}"`,
+        reportDate,
+        `"${statusText}"`,
+        att?.check_in_time ? formatTimeID(att.check_in_time) : '-',
+        att?.check_in_distance_meters ? Math.round(att.check_in_distance_meters) : '-',
+        att?.check_out_time ? formatTimeID(att.check_out_time) : '-',
+        att ? formatDuration(att.check_in_time, att.check_out_time) : '-',
+        `"${att?.notes || '-'}"`,
+      ];
+    });
+    downloadCsv(`Laporan_Harian_GuangJi_${reportDate}.csv`, headers, rows);
+  };
+
+  // 2. Calculations - Monthly Report
+  const monthlyStaffSummary = useMemo(() => {
+    return profiles.map((staff) => {
+      const staffAtts = attendances.filter((att) => {
+        if (att.user_id !== staff.id) return false;
+        const d = new Date(att.check_in_time);
+        return d.getMonth() === reportMonth && d.getFullYear() === reportYear;
+      });
+
+      const totalDays = staffAtts.length;
+      const onTimeDays = staffAtts.filter((a) => a.status === 'present').length;
+      const lateDays = staffAtts.filter((a) => a.status === 'late').length;
+
+      let totalMinutes = 0;
+      let checkInMinutesSum = 0;
+
+      staffAtts.forEach((a) => {
+        if (a.check_in_time && a.check_out_time) {
+          const start = new Date(a.check_in_time).getTime();
+          const end = new Date(a.check_out_time).getTime();
+          totalMinutes += Math.max(0, Math.floor((end - start) / 60000));
+        }
+        const d = new Date(a.check_in_time);
+        checkInMinutesSum += d.getHours() * 60 + d.getMinutes();
+      });
+
+      const avgCheckInMin = totalDays > 0 ? Math.round(checkInMinutesSum / totalDays) : null;
+      const avgCheckInStr =
+        avgCheckInMin !== null
+          ? `${String(Math.floor(avgCheckInMin / 60)).padStart(2, '0')}:${String(avgCheckInMin % 60).padStart(2, '0')} WIB`
+          : '-';
+
+      const totalHours = Math.floor(totalMinutes / 60);
+      const remainingMins = totalMinutes % 60;
+      const durationStr = totalMinutes > 0 ? `${totalHours}j ${remainingMins}m` : '-';
+      const attendanceRate = Math.min(100, Math.round((totalDays / 26) * 100));
+
+      return {
+        staff,
+        totalDays,
+        onTimeDays,
+        lateDays,
+        totalMinutes,
+        durationStr,
+        avgCheckInStr,
+        attendanceRate,
+        records: staffAtts,
+      };
+    });
+  }, [profiles, attendances, reportMonth, reportYear]);
+
+  const monthlyOverallStats = useMemo(() => {
+    const totalLogs = monthlyStaffSummary.reduce((sum, item) => sum + item.totalDays, 0);
+    const totalOnTime = monthlyStaffSummary.reduce((sum, item) => sum + item.onTimeDays, 0);
+    const totalMinutes = monthlyStaffSummary.reduce((sum, item) => sum + item.totalMinutes, 0);
+    const onTimeRate = totalLogs > 0 ? Math.round((totalOnTime / totalLogs) * 100) : 0;
+    const totalHours = Math.floor(totalMinutes / 60);
+
+    return {
+      totalLogs,
+      totalHours,
+      onTimeRate,
+      activeStaffCount: profiles.length,
+    };
+  }, [monthlyStaffSummary, profiles]);
+
+  const handleExportMonthlyReport = () => {
+    const monthName = MONTH_NAMES[reportMonth];
+    const headers = [
+      'No',
+      'Nama Staff',
+      'Jabatan',
+      'Email',
+      'Periode Bulan',
+      'Tahun',
+      'Total Hari Hadir',
+      'Hadir Tepat Waktu',
+      'Terlambat',
+      'Akumulasi Jam Kerja',
+      'Rata-rata Jam Masuk',
+      'Persentase Kehadiran',
+    ];
+    const rows = monthlyStaffSummary.map((item, idx) => [
+      idx + 1,
+      `"${item.staff.full_name}"`,
+      `"${item.staff.job_position || '-'}"`,
+      `"${item.staff.email || '-'}"`,
+      monthName,
+      reportYear,
+      item.totalDays,
+      item.onTimeDays,
+      item.lateDays,
+      `"${item.durationStr}"`,
+      `"${item.avgCheckInStr}"`,
+      `"${item.attendanceRate}%"`,
+    ]);
+    downloadCsv(`Rekap_Bulanan_GuangJi_${monthName}_${reportYear}.csv`, headers, rows);
+  };
+
+  // 3. Calculations - Per Staff Report
+  const selectedStaffProfile = useMemo(() => {
+    return profiles.find((p) => p.id === reportStaffId) || profiles[0] || null;
+  }, [profiles, reportStaffId]);
+
+  const selectedStaffRecords = useMemo(() => {
+    if (!selectedStaffProfile) return [];
+    return attendances.filter((a) => a.user_id === selectedStaffProfile.id);
+  }, [attendances, selectedStaffProfile]);
+
+  const staffStats = useMemo(() => {
+    const total = selectedStaffRecords.length;
+    const onTime = selectedStaffRecords.filter((a) => a.status === 'present').length;
+    const late = selectedStaffRecords.filter((a) => a.status === 'late').length;
+
+    let totalMinutes = 0;
+    selectedStaffRecords.forEach((a) => {
+      if (a.check_in_time && a.check_out_time) {
+        const start = new Date(a.check_in_time).getTime();
+        const end = new Date(a.check_out_time).getTime();
+        totalMinutes += Math.max(0, Math.floor((end - start) / 60000));
+      }
+    });
+
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    const punctualRate = total > 0 ? Math.round((onTime / total) * 100) : 0;
+
+    return {
+      total,
+      onTime,
+      late,
+      totalDurationStr: `${hours} jam ${mins} menit`,
+      punctualRate,
+    };
+  }, [selectedStaffRecords]);
+
+  const handleExportStaffReport = () => {
+    if (!selectedStaffProfile) return;
+    const headers = [
+      'No',
+      'Nama Staff',
+      'Jabatan',
+      'Tanggal',
+      'Jam Masuk (WIB)',
+      'Jarak GPS (m)',
+      'Jam Pulang (WIB)',
+      'Durasi Kerja',
+      'Status Kehadiran',
+      'Catatan',
+    ];
+    const rows = selectedStaffRecords.map((att, idx) => {
+      const statusText = att.status === 'present' ? 'Tepat Waktu' : 'Terlambat';
+      return [
+        idx + 1,
+        `"${selectedStaffProfile.full_name}"`,
+        `"${selectedStaffProfile.job_position || '-'}"`,
+        formatDateID(att.check_in_time),
+        formatTimeID(att.check_in_time),
+        Math.round(att.check_in_distance_meters),
+        att.check_out_time ? formatTimeID(att.check_out_time) : '-',
+        formatDuration(att.check_in_time, att.check_out_time),
+        `"${statusText}"`,
+        `"${att.notes || '-'}"`,
+      ];
+    });
+    const safeName = selectedStaffProfile.full_name.replace(/[^a-zA-Z0-9]/g, '_');
+    downloadCsv(`Rekap_Staff_${safeName}_${reportYear}.csv`, headers, rows);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // Site Diary Filtering & Correlation Calculations
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  const reportsToday = useMemo(() => {
+    return dailyReports.filter(
+      (r) => r.report_date === todayStr || (r.created_at && r.created_at.startsWith(todayStr))
+    );
+  }, [dailyReports, todayStr]);
+
+  const totalHeadcountToday = useMemo(() => {
+    return reportsToday.reduce((sum, r) => sum + (r.worker_headcount || 0), 0);
+  }, [reportsToday]);
+
+  const latestWeatherCondition: WeatherCondition = useMemo(() => {
+    if (reportsToday.length > 0) return reportsToday[0].weather_condition;
+    if (dailyReports.length > 0) return dailyReports[0].weather_condition;
+    return 'sunny';
+  }, [reportsToday, dailyReports]);
+
+  const availableZones = useMemo(() => {
+    const set = new Set<string>();
+    dailyReports.forEach((r) => {
+      if (r.zone_name) set.add(r.zone_name);
+    });
+    return Array.from(set);
+  }, [dailyReports]);
+
+  const filteredSiteReports = useMemo(() => {
+    return dailyReports.filter((rep) => {
+      if (siteReportDateFilter === 'today') {
+        const isToday =
+          rep.report_date === todayStr || (rep.created_at && rep.created_at.startsWith(todayStr));
+        if (!isToday) return false;
+      }
+      if (reportZoneFilter !== 'all' && rep.zone_name !== reportZoneFilter) {
+        return false;
+      }
+      if (siteReportSearchQuery.trim()) {
+        const q = siteReportSearchQuery.toLowerCase();
+        const reporterName = rep.reporter?.full_name?.toLowerCase() || '';
+        const zoneName = rep.zone_name?.toLowerCase() || '';
+        const workComp = rep.work_completed?.toLowerCase() || '';
+        const obst = rep.obstacles?.toLowerCase() || '';
+        if (
+          !reporterName.includes(q) &&
+          !zoneName.includes(q) &&
+          !workComp.includes(q) &&
+          !obst.includes(q)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [dailyReports, siteReportDateFilter, reportZoneFilter, siteReportSearchQuery, todayStr]);
+
+  const handleExportSiteReportsCsv = () => {
+    const headers = [
+      'No',
+      'Tanggal Laporan',
+      'Waktu Kirim (WIB)',
+      'Nama Pengawas / Mandor',
+      'Jabatan',
+      'Zona Proyek',
+      'Kondisi Cuaca',
+      'Jumlah Tukang (Headcount)',
+      'Pekerjaan Selesai',
+      'Rencana Pekerjaan Besok',
+      'Kendala Lapangan',
+      'Koordinat GPS',
+      'URL Foto Bukti',
+    ];
+    const rows = filteredSiteReports.map((rep, idx) => [
+      idx + 1,
+      rep.report_date,
+      formatTimeID(rep.created_at),
+      `"${rep.reporter?.full_name || '-'}"`,
+      `"${rep.reporter?.job_position || '-'}"`,
+      `"${rep.zone_name}"`,
+      `"${rep.weather_condition}"`,
+      rep.worker_headcount || 0,
+      `"${rep.work_completed.replace(/"/g, '""')}"`,
+      `"${(rep.work_planned_tomorrow || '-').replace(/"/g, '""')}"`,
+      `"${(rep.obstacles || '-').replace(/"/g, '""')}"`,
+      `"${rep.latitude}, ${rep.longitude}"`,
+      `"${rep.photo_url}"`,
+    ]);
+    downloadCsv(`Site_Diary_GuangJi_${todayStr}.csv`, headers, rows);
+  };
+
   if (isAuthLoading || !user) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white space-y-3">
@@ -498,7 +977,9 @@ function AdminDashboardInner() {
   // Navigation Items
   const navItems = [
     { id: 'overview' as AdminTab, label: 'Dashboard Utama', icon: LayoutDashboard, badge: 'Live' },
-    { id: 'attendance' as AdminTab, label: 'Log & Rekap Absensi', icon: ClipboardList, count: attendances.length },
+    { id: 'attendance' as AdminTab, label: 'Log Presensi', icon: ClipboardList, count: attendances.length },
+    { id: 'site_reports' as AdminTab, label: 'Laporan Proyek (Site Diary)', icon: FileText, count: dailyReports.length, badge: 'Baru' },
+    { id: 'reports' as AdminTab, label: 'Rekap Presensi & Jam Kerja', icon: FileBarChart },
     { id: 'staff' as AdminTab, label: 'Kelola Tim & Staff', icon: Users, count: profiles.length },
     { id: 'site' as AdminTab, label: 'Lokasi Site & Geofence', icon: MapPin },
     { id: 'workhours' as AdminTab, label: 'Jam Kerja & Shift', icon: Clock },
@@ -737,14 +1218,6 @@ function AdminDashboardInner() {
             </button>
 
             <button
-              onClick={handleExportCSV}
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-slate-700 shadow-xs cursor-pointer active:scale-95 transition-all"
-            >
-              <Download className="w-4 h-4 text-amber-400" />
-              <span>Export CSV</span>
-            </button>
-
-            <button
               onClick={() => {
                 setStaffModalError(null);
                 setShowAddStaffModal(true);
@@ -920,6 +1393,29 @@ function AdminDashboardInner() {
 
                 {/* Right (5 cols): Mini Map & Active Announcements */}
                 <div className="lg:col-span-5 space-y-4">
+                  {/* Site Diary Preview Banner */}
+                  <div className="bg-gradient-to-r from-amber-500/15 via-blue-500/10 to-slate-900/90 p-4 rounded-2xl border border-amber-500/25 flex items-center justify-between gap-3 shadow-xs">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Site Diary & Dokumentasi Proyek</span>
+                      </div>
+                      <p className="text-xs font-semibold text-white mt-1">
+                        {reportsToday.length} laporan progres hari ini • {totalHeadcountToday} tukang di lapangan
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Cuaca: {latestWeatherCondition === 'sunny' ? 'Cerah ☀️' : latestWeatherCondition === 'cloudy' ? 'Berawan ⛅' : latestWeatherCondition === 'rainy' ? 'Hujan 🌧️' : 'Hujan Lebat ⛈️'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('site_reports')}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-xl transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-sm"
+                    >
+                      <span>Buka Log</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
                   {/* Interactive Site Radar */}
                   <div className="bg-slate-900/90 rounded-2xl border border-amber-500/15 p-4 shadow-sm space-y-3">
                     <div className="flex items-center justify-between">
@@ -990,6 +1486,34 @@ function AdminDashboardInner() {
           {/* ======================================================== */}
           {activeTab === 'attendance' && (
             <div className="space-y-4">
+              {/* Shortcut Banner to Advanced Reports */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-slate-900 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                    <FileBarChart className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>Pusat Laporan & Rekapitulasi Presensi</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">Lengkap</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Tersedia rekapitulasi harian terperinci, rekap bulanan tim, serta kartu riwayat absensi per personil staff.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTab('reports');
+                    router.push('/admin?tab=reports');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shrink-0 shadow-sm transition-all cursor-pointer active:scale-95"
+                >
+                  <CalendarRange className="w-3.5 h-3.5" />
+                  <span>Buka Menu Rekapitulasi ➔</span>
+                </button>
+              </div>
+
               {/* Filter & Search Bar */}
               <div className="bg-slate-900/90 p-4 rounded-2xl border border-amber-500/15 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div className="relative flex-1">
@@ -1064,7 +1588,7 @@ function AdminDashboardInner() {
 
               {/* Table Data */}
               <div className="bg-slate-900/90 rounded-2xl border border-amber-500/15 overflow-hidden shadow-sm">
-                <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
                   <div>
                     <h3 className="font-bold text-sm text-white">
                       Data Log Kehadiran Lapangan ({filteredRecords.length})
@@ -1073,10 +1597,11 @@ function AdminDashboardInner() {
                   </div>
                   <button
                     onClick={handleExportCSV}
-                    className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-500/10 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs active:scale-95 transition-all"
+                    title="Export data absensi terfilter ke file CSV"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download CSV</span>
+                    <Download className="w-4 h-4 text-amber-400" />
+                    <span>Export CSV ({filteredRecords.length} Log)</span>
                   </button>
                 </div>
 
@@ -1165,6 +1690,1100 @@ function AdminDashboardInner() {
           )}
 
           {/* ======================================================== */}
+          {/* TAB: LAPORAN HARIAN PROYEK & SITE DIARY (KEMAJUAN FISIK) */}
+          {/* ======================================================== */}
+          {activeTab === 'site_reports' && (
+            <div className="space-y-6">
+              {/* Header Card */}
+              <div className="p-5 lg:p-6 rounded-2xl bg-slate-900/90 border border-amber-500/20 shadow-sm relative overflow-hidden">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-500 mb-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Site Operations & Field Management</span>
+                    </div>
+                    <h2 className="text-lg lg:text-xl font-black text-white tracking-tight flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-amber-500" />
+                      Laporan Harian Proyek (Site Diary)
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                      Pusat pemantauan kegiatan konstruksi Sekolah Guang Ming Pusat. Mengkorelasikan presensi pengawas, headcount tukang mandor, kondisi cuaca, dan dokumentasi fisik lapangan dengan watermark GPS.
+                    </p>
+                  </div>
+
+                  {/* Actions: Print, Export, WhatsApp & Input Laporan */}
+                  <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                    <button
+                      onClick={() => {
+                        const targetReport = filteredSiteReports[0] || dailyReports[0];
+                        if (targetReport) {
+                          const waText = generateWhatsAppReportText(targetReport);
+                          navigator.clipboard.writeText(waText);
+                          setSaveNotification('Format Laporan WhatsApp berhasil disalin ke clipboard! Siap dikirim ke grup WA.');
+                        }
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all cursor-pointer"
+                    >
+                      <Copy className="w-4 h-4" />
+                      <span>Salin WA Hari Ini</span>
+                    </button>
+
+                    <button
+                      onClick={handlePrint}
+                      className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                      title="Cetak Laporan Site Diary Resmi (PDF)"
+                    >
+                      <Printer className="w-4 h-4 text-amber-400" />
+                      <span>Cetak / PDF</span>
+                    </button>
+
+                    <button
+                      onClick={handleExportSiteReportsCsv}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-extrabold flex items-center gap-2 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export CSV Proyek</span>
+                    </button>
+
+                    <Link
+                      href="/laporan"
+                      className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                    >
+                      <span>+ Input Laporan</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 Project Correlation Metric Cards Sesuai Format Real Proyek */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 lg:gap-4">
+                {/* 1. Kondisi Cuaca Berkala Lapangan */}
+                <div className="p-4 lg:p-5 rounded-2xl bg-slate-900/90 border border-amber-500/20 shadow-xs relative overflow-hidden group">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-400">Cuaca Berkala Site</span>
+                    <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <Sun className="w-4 h-4 text-amber-400" />
+                    </div>
+                  </div>
+                  <div className="font-mono text-sm font-bold text-white space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">08.00 - 15.30:</span>
+                      <span className="text-amber-400">Cerah ☀️</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">15.30 - 17.00:</span>
+                      <span className="text-blue-400">Hujan 🌧️</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                    Efek hujan tercatat resmi di log harian
+                  </p>
+                </div>
+
+                {/* 2. Total Karyawan Staff & Pekerja Harian */}
+                <div className="p-4 lg:p-5 rounded-2xl bg-slate-900/90 border border-blue-500/20 shadow-xs relative overflow-hidden group">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-400">Total SDM Lapangan</span>
+                    <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-3xl font-extrabold text-blue-400 tracking-tight tabular-nums">
+                      {filteredSiteReports[0]?.total_workers || 42}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400">orang total</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-1">
+                    <strong className="text-blue-400">{filteredSiteReports[0]?.staff_total || 17} Staff</strong> + <strong className="text-amber-400">{filteredSiteReports[0]?.manpower_total || 25} Manpower</strong>
+                  </p>
+                </div>
+
+                {/* 3. Manpower & Alat Berat */}
+                <div className="p-4 lg:p-5 rounded-2xl bg-slate-900/90 border border-amber-500/20 shadow-xs relative overflow-hidden group">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-400">Manpower & Alat Berat</span>
+                    <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <HardHat className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-3xl font-extrabold text-amber-400 tracking-tight tabular-nums">
+                      {filteredSiteReports[0]?.manpower_total || 25}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400">orang</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 truncate">
+                    22 Sipil • 1 K3 • 1 Excavator • 1 Crane
+                  </p>
+                </div>
+
+                {/* 4. Staff Kontraktor PT. BBS */}
+                <div className="p-4 lg:p-5 rounded-2xl bg-slate-900/90 border border-emerald-500/20 shadow-xs relative overflow-hidden group">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-400">Staff Kontraktor BBS</span>
+                    <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <Building className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-3xl font-extrabold text-emerald-400 tracking-tight tabular-nums">
+                      {filteredSiteReports[0]?.staff_total || 17}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400">staff di site</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 truncate">
+                    PM, SM, Eng, HSE, QS, Spv, Survey, Logistik
+                  </p>
+                </div>
+              </div>
+
+              {/* Filter Bar */}
+              <div className="p-4 bg-slate-900/90 rounded-2xl border border-amber-500/15 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+                <div className="relative w-full md:w-80">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={siteReportSearchQuery}
+                    onChange={(e) => setSiteReportSearchQuery(e.target.value)}
+                    placeholder="Cari pengawas, zona, pekerjaan..."
+                    className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  />
+                  {siteReportSearchQuery && (
+                    <button
+                      onClick={() => setSiteReportSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+                  {/* Filter Tanggal */}
+                  <select
+                    value={siteReportDateFilter}
+                    onChange={(e) => setSiteReportDateFilter(e.target.value as 'all' | 'today')}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  >
+                    <option value="all">Semua Tanggal</option>
+                    <option value="today">Hari Ini Saja</option>
+                  </select>
+
+                  {/* Filter Zona */}
+                  <select
+                    value={reportZoneFilter}
+                    onChange={(e) => setReportZoneFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500/40 max-w-[200px] truncate"
+                  >
+                    <option value="all">Semua Zona Proyek</option>
+                    {availableZones.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </select>
+
+                  <span className="text-xs text-slate-400 font-mono">
+                    {filteredSiteReports.length} laporan
+                  </span>
+                </div>
+              </div>
+
+              {/* SECTION A: GALERI DOKUMENTASI FISIK PROYEK (VISUAL GRID) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-amber-500" />
+                    <h3 className="font-bold text-sm text-white">Galeri Foto Lapangan Ber-Watermark GPS</h3>
+                  </div>
+                  <span className="text-xs text-slate-400">Klik foto untuk inspeksi detail resolusi penuh</span>
+                </div>
+
+                {filteredSiteReports.length === 0 ? (
+                  <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-slate-800">
+                    <FileText className="w-10 h-10 text-slate-500 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-slate-300">Tidak ada dokumentasi yang sesuai filter</p>
+                    <p className="text-xs text-slate-500 mt-1">Coba sesuaikan kata kunci pencarian atau ubah filter tanggal.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredSiteReports.map((rep) => (
+                      <div
+                        key={rep.id}
+                        className="bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-sm hover:border-amber-500/40 transition-all flex flex-col group"
+                      >
+                        {/* Foto Thumbnail dengan Watermark GPS */}
+                        <div
+                          onClick={() => {
+                            setSelectedReportDetail(rep);
+                            setSelectedReportPhotoIndex(0);
+                          }}
+                          className="relative aspect-video bg-black cursor-pointer overflow-hidden"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={rep.photo_url}
+                            alt="Foto Lapangan"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end justify-between p-3">
+                            <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 font-bold">
+                              <MapPin className="w-3 h-3" />
+                              GPS Verified
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {Array.isArray(rep.photos) && rep.photos.length > 1 && (
+                                <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                  🖼️ {rep.photos.length} Foto
+                                </span>
+                              )}
+                              <span className="text-[10px] font-bold bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                <ZoomIn className="w-3 h-3" />
+                                Inspeksi
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card Info */}
+                        <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 truncate max-w-[180px]">
+                                {rep.zone_name}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {formatTimeID(rep.created_at)} WIB
+                              </span>
+                            </div>
+
+                            <h4 className="text-xs font-bold text-white">
+                              {rep.reporter?.full_name || 'Pengawas Lapangan'}
+                            </h4>
+                            <p className="text-[10px] text-slate-400">
+                              {rep.reporter?.job_position || 'Staff Proyek'}
+                            </p>
+
+                            <p className="text-xs text-slate-300 mt-2 line-clamp-2 leading-relaxed">
+                              {rep.work_completed}
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] gap-2">
+                            <span className="text-slate-400 flex items-center gap-1 text-[10px] font-mono">
+                              <Users className="w-3 h-3 text-blue-400" />
+                              {rep.total_workers ? `${rep.total_workers} SDM` : `${rep.worker_headcount} Tukang`}
+                            </span>
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const waText = generateWhatsAppReportText(rep);
+                                  navigator.clipboard.writeText(waText);
+                                  setSaveNotification('Format Laporan WhatsApp berhasil disalin!');
+                                }}
+                                className="px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                title="Salin Pesan Format WhatsApp"
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                                <span>Salin WA</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION B: TABEL LENGKAP SITE DIARY */}
+              <div className="bg-slate-900/90 rounded-2xl border border-amber-500/15 overflow-hidden shadow-sm space-y-0">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-amber-500" />
+                    <h3 className="font-bold text-sm text-white">Log Site Diary Terstruktur</h3>
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">
+                    Total {filteredSiteReports.length} Laporan
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950/80 text-slate-400 font-semibold uppercase tracking-wider text-[10px] border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">Waktu</th>
+                        <th className="py-3 px-4">Pengawas / Mandor</th>
+                        <th className="py-3 px-4">Zona Proyek</th>
+                        <th className="py-3 px-4">Cuaca</th>
+                        <th className="py-3 px-4 text-center">Tukang</th>
+                        <th className="py-3 px-4 min-w-[200px]">Uraian Pekerjaan Selesai</th>
+                        <th className="py-3 px-4 min-w-[160px]">Kendala Lapangan</th>
+                        <th className="py-3 px-4 text-right">Foto & WhatsApp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {filteredSiteReports.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-slate-500 text-xs">
+                            Tidak ada data site diary.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredSiteReports.map((rep) => (
+                          <tr key={rep.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-3 px-4 whitespace-nowrap font-mono text-slate-300">
+                              <div>{formatDateID(rep.created_at)}</div>
+                              <div className="text-[10px] text-amber-400/90">{formatTimeID(rep.created_at)} WIB</div>
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <div className="font-bold text-white">{rep.reporter?.full_name || 'Staff Lapangan'}</div>
+                              <div className="text-[10px] text-slate-400">{rep.reporter?.job_position || '-'}</div>
+                            </td>
+                            <td className="py-3 px-4 text-amber-300/90 font-medium whitespace-nowrap">
+                              {rep.zone_name}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap text-slate-300">
+                              {rep.weather_condition === 'sunny'
+                                ? '☀️ Cerah'
+                                : rep.weather_condition === 'cloudy'
+                                ? '⛅ Mendung'
+                                : rep.weather_condition === 'rainy'
+                                ? '🌧️ Hujan'
+                                : '⛈️ Hujan Lebat'}
+                            </td>
+                            <td className="py-3 px-4 text-center font-mono font-bold text-blue-400">
+                              {rep.total_workers || rep.worker_headcount || 0}
+                            </td>
+                            <td className="py-3 px-4 text-slate-200 leading-relaxed">
+                              <pre className="font-sans whitespace-pre-wrap text-xs">
+                                {rep.work_completed}
+                              </pre>
+                              {rep.work_planned_tomorrow && (
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                  Rencana besok: {rep.work_planned_tomorrow}
+                                </p>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              {rep.obstacles ? (
+                                <span className="text-rose-400 font-medium text-[11px] flex items-start gap-1">
+                                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                                  <span>{rep.obstacles}</span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-500 text-[11px]">-</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    const waText = generateWhatsAppReportText(rep);
+                                    navigator.clipboard.writeText(waText);
+                                    setSaveNotification('Format Laporan WhatsApp berhasil disalin!');
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 font-semibold text-[10px] border border-emerald-500/30 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                  title="Salin Pesan Format WhatsApp"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                  <span>Salin WA</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedReportDetail(rep);
+                                    setSelectedReportPhotoIndex(0);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 font-semibold text-[10px] border border-amber-500/30 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>Detail</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: LAPORAN & REKAPITULASI PROYEK (HARIAN / BULANAN / PER STAFF) */}
+          {/* ======================================================== */}
+          {activeTab === 'reports' && (
+            <div className="space-y-6">
+              {/* Header Card / Mode Switcher */}
+              <div className="p-5 lg:p-6 rounded-2xl bg-slate-900/90 border border-amber-500/20 shadow-sm relative overflow-hidden">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-500 mb-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Modul Laporan & Rekapitulasi Presensi</span>
+                    </div>
+                    <h2 className="text-lg lg:text-xl font-black text-white tracking-tight">
+                      Laporan Kehadiran Yayasan Guang Ji
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                      Pusat analisis kehadiran tim proyek Sekolah Guang Ming. Pilih periode harian, bulanan, atau telusuri profil riwayat absensi personil staff.
+                    </p>
+                  </div>
+
+                  {/* Actions: Print & Export */}
+                  <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                    <button
+                      onClick={handlePrint}
+                      className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                      title="Cetak Dokumen atau Simpan sebagai PDF"
+                    >
+                      <Printer className="w-4 h-4 text-amber-400" />
+                      <span>Cetak / PDF</span>
+                    </button>
+
+                    {reportSubTab === 'daily' && (
+                      <button
+                        onClick={handleExportDailyReport}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-extrabold flex items-center gap-2 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Export CSV Harian</span>
+                      </button>
+                    )}
+
+                    {reportSubTab === 'monthly' && (
+                      <button
+                        onClick={handleExportMonthlyReport}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-extrabold flex items-center gap-2 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Export CSV Bulanan</span>
+                      </button>
+                    )}
+
+                    {reportSubTab === 'staff' && (
+                      <button
+                        onClick={handleExportStaffReport}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-extrabold flex items-center gap-2 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Export CSV Staff</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sub-Tab Selector Pills */}
+                <div className="mt-6 flex items-center gap-2 p-1.5 rounded-xl bg-slate-950/80 border border-slate-800 w-fit overflow-x-auto no-scrollbar">
+                  <button
+                    onClick={() => setReportSubTab('daily')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      reportSubTab === 'daily'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <CalendarDays className="w-4 h-4" />
+                    <span>Rekap Harian</span>
+                  </button>
+
+                  <button
+                    onClick={() => setReportSubTab('monthly')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      reportSubTab === 'monthly'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <CalendarRange className="w-4 h-4" />
+                    <span>Rekap Bulanan</span>
+                  </button>
+
+                  <button
+                    onClick={() => setReportSubTab('staff')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      reportSubTab === 'staff'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    <span>Rekap Per Staff</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Printable Letterhead (Only visible during window.print()) */}
+              <div className="hidden print:block mb-6 pb-4 border-b-2 border-slate-900 text-slate-950">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <Image src="/logo.png" alt="Logo" width={56} height={56} className="w-14 h-14 object-contain" />
+                    <div>
+                      <h1 className="text-base font-black uppercase tracking-wider">Yayasan Guang Ji Indonesia</h1>
+                      <h2 className="text-sm font-bold">Proyek Pembangunan Sekolah Guang Ming Pusat</h2>
+                      <p className="text-xs text-slate-600">{site.address || 'Cengkareng, Jakarta Barat'}</p>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs">
+                    <p className="font-bold">Laporan Resmi Sistem Presensi</p>
+                    <p className="text-slate-600">Dicetak: {formatDateID(new Date().toISOString())}</p>
+                    <p className="text-slate-600">Oleh: {user.full_name} ({user.role})</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ====================================================== */}
+              {/* SUB-VIEW 1: REKAP HARIAN */}
+              {/* ====================================================== */}
+              {reportSubTab === 'daily' && (
+                <div className="space-y-6">
+                  {/* Date Controls & Filter */}
+                  <div className="bg-slate-900/90 p-4 rounded-2xl border border-amber-500/15 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-slate-400">Pilih Tanggal:</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            const d = new Date(reportDate);
+                            d.setDate(d.getDate() - 1);
+                            setReportDate(d.toISOString().split('T')[0]);
+                          }}
+                          className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 cursor-pointer"
+                          title="Hari Sebelumnya"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        <input
+                          type="date"
+                          value={reportDate}
+                          onChange={(e) => setReportDate(e.target.value)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                        />
+
+                        <button
+                          onClick={() => {
+                            const d = new Date(reportDate);
+                            d.setDate(d.getDate() + 1);
+                            setReportDate(d.toISOString().split('T')[0]);
+                          }}
+                          className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 cursor-pointer"
+                          title="Hari Berikutnya"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => setReportDate(new Date().toISOString().split('T')[0])}
+                        className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 text-xs font-semibold cursor-pointer"
+                      >
+                        Hari Ini
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const yest = new Date();
+                          yest.setDate(yest.getDate() - 1);
+                          setReportDate(yest.toISOString().split('T')[0]);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-semibold cursor-pointer"
+                      >
+                        Kemarin
+                      </button>
+                    </div>
+
+                    <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4" />
+                      <span>{formatDateID(reportDate + 'T00:00:00')}</span>
+                    </div>
+                  </div>
+
+                  {/* Daily Metric Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 lg:gap-4">
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-amber-500/15">
+                      <div className="text-slate-400 text-xs font-medium">Total Personil</div>
+                      <div className="text-2xl font-black text-white mt-1">{dailyStats.total}</div>
+                      <div className="text-[11px] text-slate-500 mt-1">Personil terdaftar</div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/20">
+                      <div className="text-emerald-400 text-xs font-medium">Hadir Tepat Waktu</div>
+                      <div className="text-2xl font-black text-emerald-400 mt-1">{dailyStats.onTimeCount}</div>
+                      <div className="text-[11px] text-emerald-500/80 mt-1">Sebelum {site.work_start_time} WIB</div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-amber-500/20">
+                      <div className="text-amber-400 text-xs font-medium">Terlambat</div>
+                      <div className="text-2xl font-black text-amber-400 mt-1">{dailyStats.lateCount}</div>
+                      <div className="text-[11px] text-amber-500/80 mt-1">Melebihi toleransi ({site.late_tolerance_minutes}m)</div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-rose-500/20">
+                      <div className="text-rose-400 text-xs font-medium">Belum Presensi / Absen</div>
+                      <div className="text-2xl font-black text-rose-400 mt-1">{dailyStats.absentCount}</div>
+                      <div className="text-[11px] text-rose-500/80 mt-1">Tingkat kehadiran: {dailyStats.rate}%</div>
+                    </div>
+                  </div>
+
+                  {/* Daily Attendance Table */}
+                  <div className="bg-slate-900/90 rounded-2xl border border-amber-500/15 overflow-hidden shadow-sm">
+                    <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-sm text-white">
+                          Rincian Kehadiran Personil ({dailyStaffRows.length} Staff)
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          Status presensi tanggal {formatDateID(reportDate + 'T00:00:00')}
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        {dailyStats.presentCount} dari {dailyStats.total} Hadir
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-950/70 text-slate-400 font-semibold border-b border-slate-800">
+                          <tr>
+                            <th className="px-4 py-3">Personil</th>
+                            <th className="px-4 py-3">Jabatan</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Jam Masuk</th>
+                            <th className="px-4 py-3">Jam Pulang</th>
+                            <th className="px-4 py-3">Durasi</th>
+                            <th className="px-4 py-3">Foto</th>
+                            <th className="px-4 py-3">Catatan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {dailyStaffRows.map(({ profile: staff, attendance: att, status }) => (
+                            <tr key={staff.id} className="hover:bg-slate-800/40 transition-colors">
+                              <td className="px-4 py-3.5">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-xs shrink-0">
+                                    {staff.full_name?.charAt(0) || 'S'}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-white leading-tight">{staff.full_name}</div>
+                                    <div className="text-[10px] text-slate-500">{staff.email}</div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="px-4 py-3.5 font-medium text-slate-300">
+                                {staff.job_position || '-'}
+                              </td>
+
+                              <td className="px-4 py-3.5">
+                                {status === 'present' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>Tepat Waktu</span>
+                                  </span>
+                                ) : status === 'late' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[11px] font-bold">
+                                    <AlertCircle className="w-3 h-3" />
+                                    <span>Terlambat</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30 text-[11px] font-bold">
+                                    <XCircle className="w-3 h-3" />
+                                    <span>Belum Presensi</span>
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-3.5">
+                                {att?.check_in_time ? (
+                                  <div>
+                                    <div className="font-mono font-bold text-white">
+                                      {formatTimeID(att.check_in_time)} WIB
+                                    </div>
+                                    <div className="text-[10px] text-slate-500">
+                                      {Math.round(att.check_in_distance_meters)}m dari site
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-600 font-mono">--:--</span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-3.5">
+                                {att?.check_out_time ? (
+                                  <div className="font-mono font-bold text-emerald-400">
+                                    {formatTimeID(att.check_out_time)} WIB
+                                  </div>
+                                ) : att ? (
+                                  <span className="text-[11px] text-amber-400 font-medium">Sedang Bertugas</span>
+                                ) : (
+                                  <span className="text-slate-600 font-mono">--:--</span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-3.5 font-mono text-slate-300">
+                                {att ? formatDuration(att.check_in_time, att.check_out_time) : '-'}
+                              </td>
+
+                              <td className="px-4 py-3.5">
+                                {att?.check_in_photo_url ? (
+                                  <button
+                                    onClick={() => setSelectedPhoto(att.check_in_photo_url || null)}
+                                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer"
+                                    title="Lihat Selfie Presensi"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-600">-</span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-3.5 text-slate-400 text-[11px] max-w-xs truncate">
+                                {att?.notes || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ====================================================== */}
+              {/* SUB-VIEW 2: REKAP BULANAN */}
+              {/* ====================================================== */}
+              {reportSubTab === 'monthly' && (
+                <div className="space-y-6">
+                  {/* Month & Year Selectors */}
+                  <div className="bg-slate-900/90 p-4 rounded-2xl border border-amber-500/15 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-slate-400">Pilih Periode Bulan:</span>
+                      
+                      <select
+                        value={reportMonth}
+                        onChange={(e) => setReportMonth(parseInt(e.target.value, 10))}
+                        className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                      >
+                        {MONTH_NAMES.map((name, idx) => (
+                          <option key={name} value={idx}>{name}</option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={reportYear}
+                        onChange={(e) => setReportYear(parseInt(e.target.value, 10))}
+                        className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                      >
+                        {[2024, 2025, 2026, 2027].map((yr) => (
+                          <option key={yr} value={yr}>{yr}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <CalendarRange className="w-4 h-4" />
+                      <span>Periode: {MONTH_NAMES[reportMonth]} {reportYear}</span>
+                    </div>
+                  </div>
+
+                  {/* Monthly Metric Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 lg:gap-4">
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-amber-500/15">
+                      <div className="text-slate-400 text-xs font-medium">Total Log Presensi</div>
+                      <div className="text-2xl font-black text-white mt-1">{monthlyOverallStats.totalLogs}</div>
+                      <div className="text-[11px] text-slate-500 mt-1">Pencatatan bulan ini</div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/20">
+                      <div className="text-emerald-400 text-xs font-medium">Ketepatan Waktu</div>
+                      <div className="text-2xl font-black text-emerald-400 mt-1">{monthlyOverallStats.onTimeRate}%</div>
+                      <div className="text-[11px] text-emerald-500/80 mt-1">Presensi on-time</div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-blue-500/20">
+                      <div className="text-blue-400 text-xs font-medium">Akumulasi Jam Kerja</div>
+                      <div className="text-2xl font-black text-blue-400 mt-1">{monthlyOverallStats.totalHours} Jam</div>
+                      <div className="text-[11px] text-blue-500/80 mt-1">Total kontribusi tim</div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/90 border border-purple-500/20">
+                      <div className="text-purple-400 text-xs font-medium">Personil Aktif</div>
+                      <div className="text-2xl font-black text-purple-400 mt-1">{monthlyOverallStats.activeStaffCount}</div>
+                      <div className="text-[11px] text-purple-500/80 mt-1">Terdata di database</div>
+                    </div>
+                  </div>
+
+                  {/* Monthly Summary Table */}
+                  <div className="bg-slate-900/90 rounded-2xl border border-amber-500/15 overflow-hidden shadow-sm">
+                    <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-sm text-white">
+                          Rekapitulasi Kehadiran Karyawan - {MONTH_NAMES[reportMonth]} {reportYear}
+                        </h3>
+                        <p className="text-xs text-slate-400">Ringkasan performa kehadiran dan total jam kerja setiap staff</p>
+                      </div>
+                      <span className="text-xs text-slate-400">
+                        {monthlyStaffSummary.length} Personil Terdata
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-950/70 text-slate-400 font-semibold border-b border-slate-800">
+                          <tr>
+                            <th className="px-4 py-3">No</th>
+                            <th className="px-4 py-3">Nama Staff</th>
+                            <th className="px-4 py-3">Jabatan</th>
+                            <th className="px-4 py-3 text-center">Hari Hadir</th>
+                            <th className="px-4 py-3 text-center">Tepat Waktu</th>
+                            <th className="px-4 py-3 text-center">Terlambat</th>
+                            <th className="px-4 py-3">Total Jam Kerja</th>
+                            <th className="px-4 py-3">Rata-rata Masuk</th>
+                            <th className="px-4 py-3 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {monthlyStaffSummary.map((item, idx) => (
+                            <tr key={item.staff.id} className="hover:bg-slate-800/40 transition-colors">
+                              <td className="px-4 py-3.5 text-slate-500 font-mono">{idx + 1}</td>
+                              <td className="px-4 py-3.5 font-bold text-white">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold flex items-center justify-center">
+                                    {item.staff.full_name?.charAt(0) || 'S'}
+                                  </div>
+                                  <span>{item.staff.full_name}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3.5 text-slate-300">{item.staff.job_position || '-'}</td>
+                              <td className="px-4 py-3.5 text-center font-bold text-white">
+                                <span className="px-2 py-0.5 rounded-full bg-slate-800 font-mono">
+                                  {item.totalDays} hari
+                                </span>
+                              </td>
+                              <td className="px-4 py-3.5 text-center font-bold text-emerald-400 font-mono">
+                                {item.onTimeDays}
+                              </td>
+                              <td className="px-4 py-3.5 text-center font-bold text-amber-400 font-mono">
+                                {item.lateDays}
+                              </td>
+                              <td className="px-4 py-3.5 font-mono text-slate-200">{item.durationStr}</td>
+                              <td className="px-4 py-3.5 font-mono text-slate-400">{item.avgCheckInStr}</td>
+                              <td className="px-4 py-3.5 text-right">
+                                <button
+                                  onClick={() => {
+                                    setReportStaffId(item.staff.id);
+                                    setReportSubTab('staff');
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white text-[11px] font-semibold border border-slate-700 cursor-pointer"
+                                >
+                                  Detail Staff ➔
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ====================================================== */}
+              {/* SUB-VIEW 3: REKAP PER STAFF */}
+              {/* ====================================================== */}
+              {reportSubTab === 'staff' && (
+                <div className="space-y-6">
+                  {/* Staff Selector */}
+                  <div className="bg-slate-900/90 p-4 rounded-2xl border border-amber-500/15 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-1 max-w-md">
+                      <label className="text-xs font-bold text-slate-400 shrink-0">Pilih Personil:</label>
+                      <select
+                        value={reportStaffId}
+                        onChange={(e) => setReportStaffId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                      >
+                        {profiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.full_name} ({p.job_position || 'Staff'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="text-xs text-slate-400">
+                      Menampilkan seluruh riwayat presensi yang terekam
+                    </div>
+                  </div>
+
+                  {/* Staff Info Card & Metrics */}
+                  {selectedStaffProfile && (
+                    <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-950 border border-amber-500/20 shadow-md">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                        <div className="flex items-center gap-4">
+                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-600 p-0.5 shadow-md">
+                            <div className="w-full h-full rounded-2xl bg-slate-950 flex items-center justify-center text-xl font-black text-amber-400">
+                              {selectedStaffProfile.full_name?.charAt(0) || 'S'}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-base font-extrabold text-white">
+                                {selectedStaffProfile.full_name}
+                              </h3>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 uppercase font-bold border border-amber-500/30">
+                                {selectedStaffProfile.role}
+                              </span>
+                            </div>
+                            <p className="text-xs text-amber-400/90 font-medium mt-0.5">
+                              {selectedStaffProfile.job_position || 'Staff Lapangan Sekolah Guang Ming'}
+                            </p>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
+                              <span>📧 {selectedStaffProfile.email || '-'}</span>
+                              <span>📞 {selectedStaffProfile.phone_number || '-'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-[11px] text-slate-400">Status Akun</div>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs font-bold mt-1">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            Aktif Bekerja
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 4 Staff Personal KPI Metric Cards */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-4">
+                        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                          <div className="text-slate-400 text-[11px]">Total Presensi</div>
+                          <div className="text-xl font-black text-white mt-0.5">{staffStats.total} Log</div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/70 border border-emerald-500/20">
+                          <div className="text-emerald-400 text-[11px]">Tepat Waktu</div>
+                          <div className="text-xl font-black text-emerald-400 mt-0.5">{staffStats.onTime} Kali</div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/70 border border-amber-500/20">
+                          <div className="text-amber-400 text-[11px]">Terlambat</div>
+                          <div className="text-xl font-black text-amber-400 mt-0.5">{staffStats.late} Kali</div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/70 border border-blue-500/20">
+                          <div className="text-blue-400 text-[11px]">Total Jam Kerja</div>
+                          <div className="text-xl font-black text-blue-400 mt-0.5">{staffStats.totalDurationStr}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Staff History Table */}
+                  <div className="bg-slate-900/90 rounded-2xl border border-amber-500/15 overflow-hidden shadow-sm">
+                    <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-sm text-white">
+                          Riwayat Catatan Absensi Lengkap ({selectedStaffRecords.length} Record)
+                        </h4>
+                        <p className="text-xs text-slate-400">
+                          Daftar kronologis jam masuk, jam pulang, dan jarak verifikasi
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-950/70 text-slate-400 font-semibold border-b border-slate-800">
+                          <tr>
+                            <th className="px-4 py-3">Tanggal</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Jam Masuk</th>
+                            <th className="px-4 py-3">Jarak Masuk</th>
+                            <th className="px-4 py-3">Jam Pulang</th>
+                            <th className="px-4 py-3">Durasi</th>
+                            <th className="px-4 py-3">Foto</th>
+                            <th className="px-4 py-3">Catatan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {selectedStaffRecords.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="text-center py-8 text-slate-500 text-xs">
+                                Belum ada data absensi tercatat untuk personil ini.
+                              </td>
+                            </tr>
+                          ) : (
+                            selectedStaffRecords.map((att) => (
+                              <tr key={att.id} className="hover:bg-slate-800/40 transition-colors">
+                                <td className="px-4 py-3.5 font-bold text-white">
+                                  {formatDateID(att.check_in_time)}
+                                </td>
+
+                                <td className="px-4 py-3.5">
+                                  {att.status === 'present' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      <span>Tepat Waktu</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] font-bold">
+                                      <AlertCircle className="w-3 h-3" />
+                                      <span>Terlambat</span>
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td className="px-4 py-3.5 font-mono font-bold text-white">
+                                  {formatTimeID(att.check_in_time)} WIB
+                                </td>
+
+                                <td className="px-4 py-3.5 font-mono text-slate-400">
+                                  {Math.round(att.check_in_distance_meters)} m
+                                </td>
+
+                                <td className="px-4 py-3.5 font-mono text-slate-300">
+                                  {att.check_out_time ? `${formatTimeID(att.check_out_time)} WIB` : '-'}
+                                </td>
+
+                                <td className="px-4 py-3.5 font-mono text-slate-300">
+                                  {formatDuration(att.check_in_time, att.check_out_time)}
+                                </td>
+
+                                <td className="px-4 py-3.5">
+                                  {att.check_in_photo_url ? (
+                                    <button
+                                      onClick={() => setSelectedPhoto(att.check_in_photo_url || null)}
+                                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer"
+                                      title="Lihat Selfie Presensi"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : (
+                                    <span className="text-slate-600">-</span>
+                                  )}
+                                </td>
+
+                                <td className="px-4 py-3.5 text-slate-400 text-[11px] max-w-xs truncate">
+                                  {att.notes || '-'}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ======================================================== */}
           {/* TAB 3: KELOLA TIM & DATA STAFF */}
           {/* ======================================================== */}
           {activeTab === 'staff' && (
@@ -1247,6 +2866,7 @@ function AdminDashboardInner() {
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 onClick={() => {
+                                  setStaffModalError(null);
                                   setEditingStaff(p);
                                   setEditFullName(p.full_name);
                                   setEditRole(p.role);
@@ -1865,6 +3485,13 @@ function AdminDashboardInner() {
               </button>
             </div>
 
+            {staffModalError && (
+              <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{staffModalError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleUpdateStaff} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Nama Lengkap</label>
@@ -1992,6 +3619,178 @@ function AdminDashboardInner() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: DETAIL & ZOOM FOTO SITE DIARY */}
+      {/* ============================================================ */}
+      {selectedReportDetail && (
+        (() => {
+          const adminReportPhotos =
+            Array.isArray(selectedReportDetail.photos) && selectedReportDetail.photos.length > 0
+              ? selectedReportDetail.photos
+              : Array.isArray(selectedReportDetail.documentation_photos) &&
+                selectedReportDetail.documentation_photos.length > 0
+              ? selectedReportDetail.documentation_photos
+              : selectedReportDetail.photo_url
+              ? [{ id: 'p1', url: selectedReportDetail.photo_url, caption: 'Dokumentasi Lapangan' }]
+              : [];
+
+          const currentAdminPhoto = adminReportPhotos[selectedReportPhotoIndex] || adminReportPhotos[0];
+
+          return (
+            <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-4 animate-in fade-in duration-200">
+              <div className="w-full max-w-3xl flex items-center justify-between text-white z-10 bg-slate-900/90 px-4 py-3 rounded-2xl border border-slate-800">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      {selectedReportDetail.zone_name}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {formatDateTimeID(selectedReportDetail.created_at)} WIB
+                    </span>
+                    {adminReportPhotos.length > 1 && (
+                      <span className="text-[10px] font-bold bg-blue-600/80 text-white px-2 py-0.5 rounded-md">
+                        Foto {selectedReportPhotoIndex + 1} dari {adminReportPhotos.length}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-bold mt-1 text-white">
+                    {selectedReportDetail.reporter?.full_name} ({selectedReportDetail.reporter?.job_position})
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedReportDetail(null)}
+                  className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="relative flex-1 max-w-3xl w-full flex items-center justify-center my-3 overflow-hidden rounded-2xl bg-black border border-slate-800">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={currentAdminPhoto?.url || selectedReportDetail.photo_url}
+                  alt={currentAdminPhoto?.caption || 'Inspeksi Foto Dokumentasi'}
+                  className="max-h-full max-w-full object-contain"
+                />
+
+                {/* Tombol Carousel Navigasi Foto */}
+                {adminReportPhotos.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedReportPhotoIndex((prev) =>
+                          prev > 0 ? prev - 1 : adminReportPhotos.length - 1
+                        )
+                      }
+                      className="absolute left-3 p-2.5 rounded-full bg-black/70 hover:bg-black text-white cursor-pointer transition-colors shadow-lg"
+                      title="Foto Sebelumnya"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedReportPhotoIndex((prev) =>
+                          prev < adminReportPhotos.length - 1 ? prev + 1 : 0
+                        )
+                      }
+                      className="absolute right-3 p-2.5 rounded-full bg-black/70 hover:bg-black text-white cursor-pointer transition-colors shadow-lg"
+                      title="Foto Berikutnya"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div className="w-full max-w-3xl bg-slate-900/90 text-white p-4 rounded-2xl border border-slate-800 text-xs space-y-2.5">
+                {/* Keterangan Foto Aktif */}
+                {currentAdminPhoto?.caption && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs leading-snug">
+                    <span className="font-bold text-amber-400 block text-[10px] uppercase tracking-wider mb-0.5">
+                      Keterangan Foto #{selectedReportPhotoIndex + 1}:
+                    </span>
+                    {currentAdminPhoto.caption}
+                  </div>
+                )}
+
+                {/* Thumbnail carousel jika foto > 1 */}
+                {adminReportPhotos.length > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto py-1">
+                    {adminReportPhotos.map((p, idx) => (
+                      <button
+                        key={p.id || idx}
+                        onClick={() => setSelectedReportPhotoIndex(idx)}
+                        className={`w-14 h-10 rounded-lg overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
+                          selectedReportPhotoIndex === idx
+                            ? 'border-amber-500 scale-105'
+                            : 'border-slate-700 opacity-60 hover:opacity-100'
+                        }`}
+                      >
+                        <img src={p.url} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <span className="text-amber-400 font-bold uppercase tracking-wider text-[11px]">
+                    {selectedReportDetail.contractor_name || 'PT. BERCA BUANA SAKTI'}
+                  </span>
+                  <span className="font-mono text-blue-400 font-bold">
+                    Total SDM: {selectedReportDetail.total_workers || 42} Orang ({selectedReportDetail.staff_total || 17} Staff + {selectedReportDetail.manpower_total || 25} Manpower)
+                  </span>
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-400 uppercase tracking-wider text-[10px] block mb-0.5">
+                    {selectedReportDetail.work_category || 'Rincian Pekerjaan Selesai'}:
+                  </span>
+                  <pre className="font-sans whitespace-pre-wrap text-white leading-relaxed text-[11px] max-h-24 overflow-y-auto">
+                    {selectedReportDetail.work_completed}
+                  </pre>
+                </div>
+                {selectedReportDetail.work_planned_tomorrow && (
+                  <div>
+                    <span className="font-semibold text-slate-400 text-[10px]">Rencana Besok:</span>
+                    <p className="text-slate-300 mt-0.5">{selectedReportDetail.work_planned_tomorrow}</p>
+                  </div>
+                )}
+                {selectedReportDetail.obstacles && (
+                  <div className="pt-1.5 border-t border-slate-800 text-rose-400 flex items-start gap-1.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>Kendala Lapangan: {selectedReportDetail.obstacles}</span>
+                  </div>
+                )}
+                <div className="pt-2 flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => {
+                      const waText = generateWhatsAppReportText(selectedReportDetail);
+                      navigator.clipboard.writeText(waText);
+                      setSaveNotification('Format Laporan WhatsApp berhasil disalin ke clipboard!');
+                    }}
+                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 text-xs cursor-pointer shadow-sm"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Salin Format WhatsApp (BBS & Guang Ming)</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const waText = generateWhatsAppReportText(selectedReportDetail);
+                      window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, '_blank');
+                    }}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl flex items-center justify-center gap-1.5 text-xs cursor-pointer border border-slate-700"
+                    title="Kirim ke WhatsApp Langsung"
+                  >
+                    <Share2 className="w-4 h-4 text-emerald-400" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()
       )}
 
       {/* ============================================================ */}

@@ -1,4 +1,4 @@
-import { ProjectSite, UserProfile, AttendanceRecord } from '@/types/attendance';
+import { ProjectSite, UserProfile, AttendanceRecord, DailySiteReport, ProjectZone } from '@/types/attendance';
 
 export const DEFAULT_SITE: ProjectSite = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -115,3 +115,216 @@ export const MOCK_ATTENDANCES: AttendanceRecord[] = [
     created_at: new Date(Date.now() - 3.8 * 3600000).toISOString(),
   },
 ];
+
+export const DEFAULT_PROJECT_ZONES: ProjectZone[] = [
+  {
+    id: 'zone-000',
+    site_id: DEFAULT_SITE.id,
+    name: 'Area Pondasi Tower Crane & Direksi Keet',
+    is_active: true,
+  },
+  {
+    id: 'zone-001',
+    site_id: DEFAULT_SITE.id,
+    name: 'Gedung Utama - Lantai 1 (Lobby & Kelas)',
+    is_active: true,
+  },
+  {
+    id: 'zone-002',
+    site_id: DEFAULT_SITE.id,
+    name: 'Gedung Utama - Lantai 2 (Laboratorium)',
+    is_active: true,
+  },
+  {
+    id: 'zone-003',
+    site_id: DEFAULT_SITE.id,
+    name: 'Gedung Olahraga & Auditorium',
+    is_active: true,
+  },
+  {
+    id: 'zone-004',
+    site_id: DEFAULT_SITE.id,
+    name: 'Area Pagar Keliling & Saluran Luar',
+    is_active: true,
+  },
+];
+
+export const MOCK_DAILY_REPORTS: DailySiteReport[] = [
+  {
+    id: 'rep-001',
+    site_id: DEFAULT_SITE.id,
+    site: DEFAULT_SITE,
+    reporter_id: MOCK_USERS[1].id, // Hendra Wijaya (Project Director / PM)
+    reporter: MOCK_USERS[1],
+    report_date: '2026-11-19',
+    work_day_name: 'Selasa',
+    work_hours: 'Jam 08.00 sd 17.00 WIB',
+    contractor_name: 'PT. BERCA BUANA SAKTI',
+    zone_name: 'Area Pondasi Tower Crane & Direksi Keet',
+    work_category: 'PEKERJAAN PERSIAPAN',
+    work_items: [
+      'Pekerjaan pemasangan bekisting Pondasi Tower Cran',
+      'Pembuatan direksi keet kontraktor',
+      'Pembuatan Barak pekerja',
+      'Test Trial Mix Beton di Lab MIXINDO PT. MERAK JAYA BETON',
+    ],
+    work_completed:
+      '1. Pekerjaan pemasangan bekisting Pondasi Tower Cran\n2. Pembuatan direksi keet kontraktor\n3. Pembuatan Barak pekerja\n4. Test Trial Mix Beton di Lab MIXINDO PT. MERAK JAYA BETON',
+    work_planned_tomorrow:
+      'Pengecoran pondasi tower crane dan perakitan rangka atap direksi keet kontraktor.',
+    obstacles:
+      'Hujan lebat mulai jam 15.30 WIB memperlambat mobilisasi material semen ke area barak.',
+    weather_condition: 'rainy',
+    weather_timeline: [
+      { time_range: '08.00 s/d 15.30', condition: 'Cerah' },
+      { time_range: '15.30 s/d 17.00', condition: 'Hujan' },
+    ],
+    staff_breakdown: {
+      pm: 1,
+      sm: 1,
+      eng: 1,
+      hse: 2,
+      qs: 1,
+      admin: 1,
+      drafter: 1,
+      spv: 2,
+      survey: 1,
+      ass_survey: 2,
+      logistics: 2,
+      mekanik: 1,
+      security: 1,
+    },
+    staff_total: 17,
+    manpower_breakdown: {
+      pekerja_sipil: 22,
+      k3: 1,
+      operator_excavator: 1,
+      operator_crane: 1,
+    },
+    manpower_total: 25,
+    total_workers: 42,
+    worker_headcount: 25,
+    latitude: -6.13865,
+    longitude: 106.74201,
+    photo_url: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?w=800&auto=format&fit=crop&q=80',
+    photos: [
+      {
+        id: 'p1',
+        url: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?w=800&auto=format&fit=crop&q=80',
+        caption: 'Pekerjaan pemasangan bekisting Pondasi Tower Crane',
+      },
+      {
+        id: 'p2',
+        url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+        caption: 'Pembuatan direksi keet kontraktor dan barak pekerja',
+      },
+      {
+        id: 'p3',
+        url: 'https://images.unsplash.com/photo-1590496793929-36417d3117de?w=800&auto=format&fit=crop&q=80',
+        caption: 'Test Trial Mix Beton di Lab MIXINDO PT. MERAK JAYA BETON',
+      },
+    ],
+    documentation_photos: [
+      {
+        id: 'p1',
+        url: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?w=800&auto=format&fit=crop&q=80',
+        caption: 'Pekerjaan pemasangan bekisting Pondasi Tower Crane',
+      },
+      {
+        id: 'p2',
+        url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+        caption: 'Pembuatan direksi keet kontraktor dan barak pekerja',
+      },
+      {
+        id: 'p3',
+        url: 'https://images.unsplash.com/photo-1590496793929-36417d3117de?w=800&auto=format&fit=crop&q=80',
+        caption: 'Test Trial Mix Beton di Lab MIXINDO PT. MERAK JAYA BETON',
+      },
+    ],
+    created_at: new Date('2026-11-19T17:00:00+07:00').toISOString(),
+  },
+  {
+    id: 'rep-002',
+    site_id: DEFAULT_SITE.id,
+    site: DEFAULT_SITE,
+    reporter_id: MOCK_USERS[2].id, // Ahmad Fauzi (Mandor)
+    reporter: MOCK_USERS[2],
+    report_date: '2026-11-19',
+    work_day_name: 'Selasa',
+    work_hours: 'Jam 08.00 sd 17.00 WIB',
+    contractor_name: 'PT. BERCA BUANA SAKTI',
+    zone_name: 'Gedung Utama - Lantai 2 (Laboratorium)',
+    work_category: 'PEKERJAAN STRUKTUR',
+    work_items: [
+      'Penyelesaian perakitan besi tulangan kolom K1',
+      'Pemasangan scaffolding/perancah zona barat',
+    ],
+    work_completed:
+      'Penyelesaian perakitan besi tulangan kolom K1 dan pemasangan scaffolding/perancah zona barat.',
+    work_planned_tomorrow: 'Pengecoran kolom K1 sebanyak 6 titik bersama tim batching plant.',
+    obstacles: 'Satu unit vibrator beton sedang dalam perbaikan dinamo.',
+    weather_condition: 'rainy',
+    weather_timeline: [
+      { time_range: '08.00 s/d 15.30', condition: 'Cerah' },
+      { time_range: '15.30 s/d 17.00', condition: 'Hujan' },
+    ],
+    staff_breakdown: {
+      spv: 1,
+      logistics: 1,
+    },
+    staff_total: 2,
+    manpower_breakdown: {
+      pekerja_sipil: 12,
+      k3: 1,
+      operator_excavator: 1,
+    },
+    manpower_total: 14,
+    total_workers: 16,
+    worker_headcount: 14,
+    latitude: -6.13867,
+    longitude: 106.74205,
+    photo_url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+    created_at: new Date('2026-11-19T16:30:00+07:00').toISOString(),
+  },
+  {
+    id: 'rep-003',
+    site_id: DEFAULT_SITE.id,
+    site: DEFAULT_SITE,
+    reporter_id: MOCK_USERS[3].id, // Siti Rahmawati (QC)
+    reporter: MOCK_USERS[3],
+    report_date: '2026-11-19',
+    work_day_name: 'Selasa',
+    work_hours: 'Jam 08.00 sd 17.00 WIB',
+    contractor_name: 'PT. BERCA BUANA SAKTI',
+    zone_name: 'Gedung Olahraga & Auditorium',
+    work_category: 'PEKERJAAN QUALITY CONTROL (QC)',
+    work_items: [
+      'Pemeriksaan dimensi galian pondasi tie beam',
+      'Verifikasi ketebalan lean concrete 50mm',
+    ],
+    work_completed:
+      'Pemeriksaan dimensi galian pondasi tie beam dan verifikasi ketebalan lean concrete 50mm.',
+    work_planned_tomorrow: 'Approval form sebelum izin pasang tulangan pondasi diterbitkan.',
+    obstacles: 'Tidak ada kendala, mutu galian sesuai gambar kerja revisi 02.',
+    weather_condition: 'sunny',
+    weather_timeline: [
+      { time_range: '08.00 s/d 15.30', condition: 'Cerah' },
+      { time_range: '15.30 s/d 17.00', condition: 'Hujan' },
+    ],
+    staff_breakdown: {
+      hse: 1,
+    },
+    staff_total: 1,
+    manpower_breakdown: {
+      pekerja_sipil: 6,
+    },
+    manpower_total: 6,
+    total_workers: 7,
+    worker_headcount: 6,
+    latitude: -6.13862,
+    longitude: 106.74209,
+    photo_url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80',
+    created_at: new Date('2026-11-19T15:00:00+07:00').toISOString(),
+  },
+];
+
