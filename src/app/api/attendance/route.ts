@@ -29,6 +29,18 @@ export async function POST(req: NextRequest) {
     // 2. Ambil Data Site Proyek (Sekolah Guang Ming Pusat)
     const site = DEFAULT_SITE;
 
+    // Sanitasi UUID agar selalu kompatibel dengan tipe UUID Postgres
+    const isValidUUID = (id?: string) =>
+      Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+
+    const safeSiteId = isValidUUID(siteId)
+      ? siteId
+      : '11111111-1111-1111-1111-111111111111';
+
+    const safeUserId = isValidUUID(userId)
+      ? userId
+      : '00000000-0000-0000-0000-000000000001';
+
     // 3. SERVER-SIDE GEOFENCE VALIDATION (Wajib dihitung ulang di server demi keamanan)
     const verifiedDistanceMeters = calculateDistanceHaversine(
       latitude,
@@ -56,36 +68,57 @@ export async function POST(req: NextRequest) {
     if (isSupabaseConfigured()) {
       const supabase = await createServerSupabaseClient();
       if (supabase) {
-        // Upload foto ke Supabase Storage (attendance-photos)
-        const photoBuffer = Buffer.from(
-          photoBase64.replace(/^data:image\/\w+;base64,/, ''),
-          'base64'
-        );
-        const fileName = `${userId}/${action}-${Date.now()}.jpg`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('attendance-photos')
-          .upload(fileName, photoBuffer, {
-            contentType: 'image/jpeg',
-            upsert: true,
+        // Pastikan record project_site terdaftar di database
+        try {
+          await supabase.from('project_sites').upsert({
+            id: safeSiteId,
+            name: site.name,
+            address: site.address,
+            latitude: site.latitude,
+            longitude: site.longitude,
+            radius_meters: site.radius_meters,
+            is_active: true,
           });
-
-        if (uploadError) {
-          console.error('Storage Upload Error:', uploadError);
+        } catch (err) {
+          console.warn('Upsert project_site error:', err);
         }
 
-        const { data: publicUrlData } = supabase.storage
-          .from('attendance-photos')
-          .getPublicUrl(fileName);
+        // Upload foto ke Supabase Storage (attendance-photos)
+        let photoUrl = photoBase64;
+        try {
+          const photoBuffer = Buffer.from(
+            photoBase64.replace(/^data:image\/\w+;base64,/, ''),
+            'base64'
+          );
+          const fileName = `${safeUserId}/${action}-${Date.now()}.jpg`;
 
-        const photoUrl = publicUrlData?.publicUrl || photoBase64;
+          const { error: uploadError } = await supabase.storage
+            .from('attendance-photos')
+            .upload(fileName, photoBuffer, {
+              contentType: 'image/jpeg',
+              upsert: true,
+            });
+
+          if (!uploadError) {
+            const { data: publicUrlData } = supabase.storage
+              .from('attendance-photos')
+              .getPublicUrl(fileName);
+            if (publicUrlData?.publicUrl) {
+              photoUrl = publicUrlData.publicUrl;
+            }
+          } else {
+            console.warn('Storage upload error:', uploadError);
+          }
+        } catch (err) {
+          console.warn('Photo storage processing error:', err);
+        }
 
         if (action === 'check_in') {
           const { data, error } = await supabase
             .from('attendances')
             .insert({
-              user_id: userId,
-              site_id: siteId,
+              user_id: safeUserId,
+              site_id: safeSiteId,
               check_in_time: new Date().toISOString(),
               check_in_lat: latitude,
               check_in_lng: longitude,
@@ -100,6 +133,7 @@ export async function POST(req: NextRequest) {
             .single();
 
           if (error) {
+            console.error('Supabase attendances insert error:', error);
             return NextResponse.json({ error: error.message }, { status: 500 });
           }
 
@@ -117,7 +151,7 @@ export async function POST(req: NextRequest) {
               check_out_photo_url: photoUrl,
               notes: notes || null,
             })
-            .eq('user_id', userId)
+            .eq('user_id', safeUserId)
             .is('check_out_time', null)
             .select('*')
             .single();

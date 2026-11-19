@@ -1,7 +1,7 @@
 import { ProjectSite, UserProfile, AttendanceRecord } from '@/types/attendance';
 
 export const DEFAULT_SITE: ProjectSite = {
-  id: 'site-guang-ming-01',
+  id: '11111111-1111-1111-1111-111111111111',
   name: 'Sekolah Guang Ming Pusat',
   address: 'Kawasan Proyek Sekolah Guang Ming Pusat, Jakarta Barat',
   latitude: parseFloat(process.env.NEXT_PUBLIC_DEFAULT_SITE_LAT || '-6.1386571'),
@@ -12,7 +12,7 @@ export const DEFAULT_SITE: ProjectSite = {
 
 export const MOCK_USERS: UserProfile[] = [
   {
-    id: 'user-001',
+    id: '00000000-0000-0000-0000-000000000001',
     email: 'budi.santoso@guangming.sch.id',
     full_name: 'Budi Santoso',
     role: 'staff',
@@ -22,7 +22,7 @@ export const MOCK_USERS: UserProfile[] = [
     created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
   },
   {
-    id: 'user-002',
+    id: '00000000-0000-0000-0000-000000000002',
     email: 'admin.proyek@guangming.sch.id',
     full_name: 'Hendra Wijaya (Project Manager)',
     role: 'admin',
@@ -32,7 +32,7 @@ export const MOCK_USERS: UserProfile[] = [
     created_at: new Date(Date.now() - 60 * 86400000).toISOString(),
   },
   {
-    id: 'user-003',
+    id: '00000000-0000-0000-0000-000000000003',
     email: 'mandor.ahmad@guangming.sch.id',
     full_name: 'Ahmad Fauzi',
     role: 'mandor',
@@ -42,7 +42,7 @@ export const MOCK_USERS: UserProfile[] = [
     created_at: new Date(Date.now() - 20 * 86400000).toISOString(),
   },
   {
-    id: 'user-004',
+    id: '00000000-0000-0000-0000-000000000004',
     email: 'siti.nurhaliza@guangming.sch.id',
     full_name: 'Siti Rahmawati',
     role: 'staff',
@@ -56,7 +56,7 @@ export const MOCK_USERS: UserProfile[] = [
 export const MOCK_ATTENDANCES: AttendanceRecord[] = [
   {
     id: 'att-101',
-    user_id: 'user-001',
+    user_id: MOCK_USERS[0].id,
     user: MOCK_USERS[0],
     site_id: DEFAULT_SITE.id,
     site: DEFAULT_SITE,
@@ -73,7 +73,7 @@ export const MOCK_ATTENDANCES: AttendanceRecord[] = [
   },
   {
     id: 'att-102',
-    user_id: 'user-003',
+    user_id: MOCK_USERS[2].id,
     user: MOCK_USERS[2],
     site_id: DEFAULT_SITE.id,
     site: DEFAULT_SITE,
@@ -90,7 +90,7 @@ export const MOCK_ATTENDANCES: AttendanceRecord[] = [
   },
   {
     id: 'att-103',
-    user_id: 'user-004',
+    user_id: MOCK_USERS[3].id,
     user: MOCK_USERS[3],
     site_id: DEFAULT_SITE.id,
     site: DEFAULT_SITE,

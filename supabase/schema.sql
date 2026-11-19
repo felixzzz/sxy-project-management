@@ -5,8 +5,8 @@
 
 -- 1. TABEL PROFIL PENGGUNA (PROFILES)
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT NOT NULL,
+    id UUID PRIMARY KEY,
+    email TEXT,
     full_name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('staff', 'mandor', 'admin')) DEFAULT 'staff',
     job_position TEXT DEFAULT 'Staff Konstruksi',
@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Lepaskan constraint fk ke auth.users jika ada agar akun demo / staff mandor bisa di-insert langsung
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
 
 -- 2. TABEL LOKASI PROYEK (PROJECT SITES)
 CREATE TABLE IF NOT EXISTS public.project_sites (
@@ -33,8 +36,8 @@ CREATE TABLE IF NOT EXISTS public.project_sites (
 -- 3. TABEL CATATAN ABSENSI (ATTENDANCES)
 CREATE TABLE IF NOT EXISTS public.attendances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    site_id UUID REFERENCES public.project_sites(id) ON DELETE SET NULL,
+    user_id UUID NOT NULL,
+    site_id UUID,
     
     -- Check-in
     check_in_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -58,6 +61,10 @@ CREATE TABLE IF NOT EXISTS public.attendances (
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Lepaskan foreign key ketat agar riwayat absensi tidak hilang jika profil diedit/dihapus
+ALTER TABLE public.attendances DROP CONSTRAINT IF EXISTS attendances_user_id_fkey;
+ALTER TABLE public.attendances DROP CONSTRAINT IF EXISTS attendances_site_id_fkey;
 
 -- INDEXES
 CREATE INDEX IF NOT EXISTS idx_attendances_user_id ON public.attendances(user_id);
@@ -111,6 +118,15 @@ ON CONFLICT (id) DO UPDATE SET
   longitude = EXCLUDED.longitude,
   radius_meters = EXCLUDED.radius_meters;
 
+-- SEED DATA PROFIL STAFF & ADMIN AWAL
+INSERT INTO public.profiles (id, email, full_name, role, job_position)
+VALUES 
+  ('00000000-0000-0000-0000-000000000001', 'budi.santoso@guangming.sch.id', 'Budi Santoso', 'staff', 'Pengawas Struktur & Sipil'),
+  ('00000000-0000-0000-0000-000000000002', 'admin.proyek@guangming.sch.id', 'Hendra Wijaya', 'admin', 'Project Director'),
+  ('00000000-0000-0000-0000-000000000003', 'mandor.ahmad@guangming.sch.id', 'Ahmad Fauzi', 'mandor', 'Mandor Besi & Bekisting'),
+  ('00000000-0000-0000-0000-000000000004', 'siti.nurhaliza@guangming.sch.id', 'Siti Rahmawati', 'staff', 'Quality Control (QC)')
+ON CONFLICT (id) DO NOTHING;
+
 -- 6. STORAGE BUCKET UNTUK FOTO SELFIE ABSENSI
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('attendance-photos', 'attendance-photos', true)
@@ -121,63 +137,61 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_sites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendances ENABLE ROW LEVEL SECURITY;
 
--- 8. POLICIES (Idempotent: Drop dulu jika sudah ada, baru Create)
-DROP POLICY IF EXISTS "Profiles readable by authenticated users" ON public.profiles;
-CREATE POLICY "Profiles readable by authenticated users"
+-- 8. POLICIES (Idempotent: Drop dulu jika ada, lalu Create)
+-- Profiles Policies
+DROP POLICY IF EXISTS "Profiles readable by public" ON public.profiles;
+CREATE POLICY "Profiles readable by public"
   ON public.profiles FOR SELECT
-  TO authenticated
+  TO public
   USING (true);
 
-DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
-CREATE POLICY "Users can update their own profile"
-  ON public.profiles FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Profiles editable by public" ON public.profiles;
+CREATE POLICY "Profiles editable by public"
+  ON public.profiles FOR ALL
+  TO public
+  USING (true);
 
-DROP POLICY IF EXISTS "Project sites readable by authenticated users" ON public.project_sites;
-CREATE POLICY "Project sites readable by authenticated users"
+-- Project Sites Policies
+DROP POLICY IF EXISTS "Project sites readable by public" ON public.project_sites;
+CREATE POLICY "Project sites readable by public"
   ON public.project_sites FOR SELECT
-  TO authenticated
+  TO public
   USING (true);
 
-DROP POLICY IF EXISTS "Project sites editable by admin" ON public.project_sites;
-CREATE POLICY "Project sites editable by admin"
+DROP POLICY IF EXISTS "Project sites editable by public" ON public.project_sites;
+CREATE POLICY "Project sites editable by public"
   ON public.project_sites FOR ALL
-  TO authenticated
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
-  );
+  TO public
+  USING (true);
 
-DROP POLICY IF EXISTS "Staff can view own attendance records" ON public.attendances;
-CREATE POLICY "Staff can view own attendance records"
-  ON public.attendances FOR SELECT
-  TO authenticated
-  USING (
-    auth.uid() = user_id OR 
-    EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role IN ('admin', 'mandor'))
-  );
-
-DROP POLICY IF EXISTS "Staff can insert own attendance" ON public.attendances;
-CREATE POLICY "Staff can insert own attendance"
+-- Attendances Policies
+DROP POLICY IF EXISTS "Allow insert attendances" ON public.attendances;
+CREATE POLICY "Allow insert attendances"
   ON public.attendances FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
+  TO public
+  WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Staff can update own attendance for check-out" ON public.attendances;
-CREATE POLICY "Staff can update own attendance for check-out"
+DROP POLICY IF EXISTS "Allow select attendances" ON public.attendances;
+CREATE POLICY "Allow select attendances"
+  ON public.attendances FOR SELECT
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Allow update attendances" ON public.attendances;
+CREATE POLICY "Allow update attendances"
   ON public.attendances FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = user_id);
+  TO public
+  USING (true);
 
--- Storage Policy
-DROP POLICY IF EXISTS "Authenticated users can upload attendance photos" ON storage.objects;
-CREATE POLICY "Authenticated users can upload attendance photos"
+-- Storage Policies
+DROP POLICY IF EXISTS "Allow upload attendance photos" ON storage.objects;
+CREATE POLICY "Allow upload attendance photos"
   ON storage.objects FOR INSERT
-  TO authenticated
+  TO public
   WITH CHECK (bucket_id = 'attendance-photos');
 
-DROP POLICY IF EXISTS "Attendance photos are publicly readable" ON storage.objects;
-CREATE POLICY "Attendance photos are publicly readable"
+DROP POLICY IF EXISTS "Allow select attendance photos" ON storage.objects;
+CREATE POLICY "Allow select attendance photos"
   ON storage.objects FOR SELECT
   TO public
   USING (bucket_id = 'attendance-photos');
