@@ -721,6 +721,15 @@ export default function LaporanPage() {
 
     if (!selectedZone.trim()) {
       setErrorMessage('Wajib mengisi nama zona / lokasi pekerjaan.');
+      const el = document.getElementById('zone-input-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    if (!workCompleted.trim()) {
+      setErrorMessage('Harap isi ringkasan pekerjaan yang telah diselesaikan hari ini.');
+      const el = document.getElementById('work-completed-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -730,16 +739,15 @@ export default function LaporanPage() {
         weatherValidation.generalError ||
           'Periode cuaca lapangan tumpang tindih (overlapping) atau jam selesai mendahului jam mulai. Harap sesuaikan waktu cuaca.'
       );
+      const el = document.getElementById('weather-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
     if (progressPhotos.length === 0) {
       setErrorMessage('Wajib melampirkan minimal 1 foto dokumentasi progres lapangan (dari galeri atau kamera).');
-      return;
-    }
-
-    if (!workCompleted.trim()) {
-      setErrorMessage('Harap isi ringkasan pekerjaan yang telah diselesaikan hari ini.');
+      const el = document.getElementById('photo-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -781,13 +789,16 @@ export default function LaporanPage() {
           longitude: geoState.longitude || site.longitude,
           photoBase64: primaryPhoto,
           photos: progressPhotos,
-          documentationPhotos: progressPhotos,
         }),
       });
 
       const json = await res.json();
       if (!res.ok) {
         throw new Error(json.error || 'Gagal mengirim laporan harian.');
+      }
+
+      if (json.data) {
+        setReports((prev) => [json.data, ...prev]);
       }
 
       confetti({
@@ -930,7 +941,7 @@ export default function LaporanPage() {
               </div>
 
               {/* Requirement 1: Zonasi Free Text + Quick Chips */}
-              <div className="space-y-1.5">
+              <div id="zone-input-section" className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-amber-500" />
@@ -978,7 +989,7 @@ export default function LaporanPage() {
               </div>
 
               {/* Requirement 2: Textarea Daftar Pekerjaan Mengikuti Panjangnya */}
-              <div>
+              <div id="work-completed-section">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                   Daftar Pekerjaan Yang Dilakukan Hari Ini <span className="text-rose-500">*</span>
                 </label>
@@ -1263,7 +1274,7 @@ export default function LaporanPage() {
             </div>
 
             {/* Requirement 5: Catatan Cuaca Lapangan (Format Time, Kelipatan 30 Menit, Tidak Overlapping) */}
-            <div className="w-full bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs space-y-3.5">
+            <div id="weather-section" className="w-full bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs space-y-3.5">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -1439,7 +1450,7 @@ export default function LaporanPage() {
             </div>
 
             {/* Foto Progress Multiple & Keterangan Foto */}
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs space-y-3.5">
+            <div id="photo-section" className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs space-y-3.5">
               <input
                 ref={galleryInputRef}
                 type="file"
@@ -1634,12 +1645,34 @@ export default function LaporanPage() {
               )}
             </div>
 
+            {/* Alert Warning sebelum Submit Button jika belum memenuhi syarat */}
+            {errorMessage && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl text-rose-700 dark:text-rose-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            {progressPhotos.length === 0 && !errorMessage && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2">
+                <Camera className="w-4 h-4 shrink-0 text-amber-500" />
+                <span>Lampirkan minimal 1 foto progres (via Kamera atau Galeri di atas) untuk mengirim laporan.</span>
+              </div>
+            )}
+
+            {!weatherValidation.isValid && !errorMessage && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span>Catatan cuaca belum valid: {weatherValidation.generalError}</span>
+              </div>
+            )}
+
             {/* Tombol Kirim Laporan */}
             <button
               type="submit"
-              disabled={isSubmitting || progressPhotos.length === 0 || !weatherValidation.isValid}
+              disabled={isSubmitting}
               className={`w-full py-3.5 px-4 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer ${
-                isSubmitting || progressPhotos.length === 0 || !weatherValidation.isValid
+                isSubmitting
                   ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed shadow-none'
                   : 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20 active:scale-98'
               }`}
