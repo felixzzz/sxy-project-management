@@ -74,16 +74,29 @@ CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 -- 4. TRIGGER: AUTO INSERT ROW PROFILE KETIKA ADA USER BARU DAFTAR
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  has_admin BOOLEAN;
 BEGIN
+  -- Cek apakah sudah ada admin terdaftar. Jika belum, jadikan user pertama ini sebagai Admin Utama
+  SELECT EXISTS(SELECT 1 FROM public.profiles WHERE role = 'admin') INTO has_admin;
+
   INSERT INTO public.profiles (id, email, full_name, role, job_position)
   VALUES (
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'staff'),
-    COALESCE(NEW.raw_user_meta_data->>'job_position', 'Staff Proyek')
+    CASE 
+      WHEN NOT has_admin THEN 'admin'
+      ELSE COALESCE(NEW.raw_user_meta_data->>'role', 'staff')
+    END,
+    COALESCE(
+      NEW.raw_user_meta_data->>'job_position',
+      CASE WHEN NOT has_admin THEN 'Project Director' ELSE 'Staff Proyek' END
+    )
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = EXCLUDED.full_name;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

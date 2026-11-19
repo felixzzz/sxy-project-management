@@ -6,7 +6,19 @@ import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { BottomNav } from '@/components/navigation/BottomNav';
 import { UserProfile } from '@/types/attendance';
-import { ArrowLeft, UserPlus, Shield, User, HardHat, Phone, Mail, CheckCircle2, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  UserPlus,
+  Shield,
+  User,
+  HardHat,
+  Phone,
+  Mail,
+  CheckCircle2,
+  Loader2,
+  Lock,
+  AlertCircle,
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 
@@ -17,9 +29,12 @@ export default function AdminStaffPage() {
   const [staffList, setStaffList] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const [newFullName, setNewFullName] = useState<string>('');
   const [newEmail, setNewEmail] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
   const [newRole, setNewRole] = useState<'staff' | 'mandor' | 'admin'>('staff');
   const [newJob, setNewJob] = useState<string>('');
   const [newPhone, setNewPhone] = useState<string>('');
@@ -42,7 +57,11 @@ export default function AdminStaffPage() {
       return;
     }
 
-    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
     if (data) {
       setStaffList(data);
     }
@@ -57,31 +76,42 @@ export default function AdminStaffPage() {
 
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    const supabase = createClient();
-    if (!supabase) return;
+    setIsSubmitting(true);
+    setModalError(null);
 
-    // Gunakan crypto.randomUUID()
-    const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-0000-0000-' + Date.now().toString().slice(-12);
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newEmail,
+          password: newPassword,
+          fullName: newFullName,
+          role: newRole,
+          jobPosition: newJob,
+          phoneNumber: newPhone,
+        }),
+      });
 
-    const newUser: UserProfile = {
-      id: newId,
-      full_name: newFullName,
-      email: newEmail,
-      role: newRole,
-      job_position: newJob || (newRole === 'admin' ? 'Project Director' : 'Staff Proyek'),
-      phone_number: newPhone,
-      is_active: true,
-      created_at: new Date().toISOString(),
-    };
+      const result = await response.json();
 
-    await supabase.from('profiles').insert(newUser);
-    await loadStaff();
+      if (!response.ok) {
+        throw new Error(result.error || 'Gagal mendaftarkan staff');
+      }
 
-    setShowAddModal(false);
-    setNewFullName('');
-    setNewEmail('');
-    setNewJob('');
-    setNewPhone('');
+      await loadStaff();
+      setShowAddModal(false);
+      setNewFullName('');
+      setNewEmail('');
+      setNewPassword('');
+      setNewJob('');
+      setNewPhone('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Terjadi kegagalan';
+      setModalError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isAuthLoading || !user || user.role !== 'admin') {
@@ -112,13 +142,16 @@ export default function AdminStaffPage() {
                 Kelola Data Staff & Mandor
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Total: {staffList.length} akun terdaftar di Supabase
+                Total: {staffList.length} akun terdaftar di proyek
               </p>
             </div>
           </div>
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setModalError(null);
+              setShowAddModal(true);
+            }}
             className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform"
           >
             <UserPlus className="w-4 h-4" />
@@ -134,7 +167,9 @@ export default function AdminStaffPage() {
           </div>
         ) : staffList.length === 0 ? (
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-slate-200 dark:border-slate-800 text-center">
-            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Belum ada staff terdaftar</p>
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Belum ada staff terdaftar
+            </p>
             <p className="text-[11px] text-slate-400 mt-1">
               Gunakan tombol &quot;Tambah Staff&quot; di atas untuk mendaftarkan akun pekerja proyek.
             </p>
@@ -210,9 +245,19 @@ export default function AdminStaffPage() {
         {showAddModal && (
           <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-5 border border-slate-200 dark:border-slate-800 shadow-xl">
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-3">
-                Tambah Akun Staff Proyek
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-2">
+                Daftarkan Akun Staff / Mandor
               </h3>
+              <p className="text-[11px] text-slate-400 mb-3">
+                Akun akan langsung aktif dan dapat digunakan untuk login.
+              </p>
+
+              {modalError && (
+                <div className="mb-3 p-2.5 bg-rose-950/60 border border-rose-800 rounded-xl flex items-start gap-2 text-rose-300 text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{modalError}</span>
+                </div>
+              )}
 
               <form onSubmit={handleAddStaff} className="space-y-3">
                 <div>
@@ -231,7 +276,7 @@ export default function AdminStaffPage() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Email
+                    Email Login
                   </label>
                   <input
                     type="email"
@@ -243,19 +288,36 @@ export default function AdminStaffPage() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Kata Sandi Sementara
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      required
+                      placeholder="Minimal 6 karakter"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full text-xs pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Peran / Role
+                      Peran / Hak Akses
                     </label>
                     <select
                       value={newRole}
                       onChange={(e) => setNewRole(e.target.value as any)}
-                      className="w-full text-xs px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full text-xs px-2.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     >
-                      <option value="staff">Staff</option>
+                      <option value="staff">Staff Proyek</option>
                       <option value="mandor">Mandor</option>
-                      <option value="admin">Admin</option>
+                      <option value="admin">Admin Portal</option>
                     </select>
                   </div>
 
@@ -279,7 +341,7 @@ export default function AdminStaffPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder="Contoh: Mandor Mekanikal & Elektrikal"
+                    placeholder="Contoh: QC / Mandor Besi"
                     value={newJob}
                     onChange={(e) => setNewJob(e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -290,15 +352,24 @@ export default function AdminStaffPage() {
                   <button
                     type="button"
                     onClick={() => setShowAddModal(false)}
-                    className="flex-1 py-2.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-medium text-xs rounded-xl"
+                    disabled={isSubmitting}
+                    className="flex-1 py-2.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-medium text-xs rounded-xl disabled:opacity-50"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl"
+                    disabled={isSubmitting}
+                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
                   >
-                    Simpan Akun
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Mendaftarkan...</span>
+                      </>
+                    ) : (
+                      <span>Simpan Akun</span>
+                    )}
                   </button>
                 </div>
               </form>
