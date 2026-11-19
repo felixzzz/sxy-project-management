@@ -39,6 +39,8 @@ export default function LoginPage() {
 
       await refreshProfile();
 
+      const isOwner = email.toLowerCase() === 'felix@salim.bz';
+
       // Cek role pengguna untuk pengalihan halaman
       const { data: profile } = await supabase
         .from('profiles')
@@ -46,7 +48,7 @@ export default function LoginPage() {
         .eq('id', data.user.id)
         .maybeSingle();
 
-      if (profile?.role === 'admin') {
+      if (isOwner || profile?.role === 'admin') {
         router.push('/admin');
       } else {
         router.push('/');

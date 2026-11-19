@@ -41,7 +41,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
+      const isOwner = userEmail.toLowerCase() === 'felix@salim.bz';
+
       if (data) {
+        // Otomatis jadikan felix@salim.bz sebagai Admin jika masih bertipe staff
+        if (isOwner && data.role !== 'admin') {
+          await supabase
+            .from('profiles')
+            .update({ role: 'admin', job_position: 'Project Director' })
+            .eq('id', userId);
+
+          return {
+            ...data,
+            role: 'admin',
+            job_position: 'Project Director',
+          } as UserProfile;
+        }
         return data as UserProfile;
       }
 
@@ -49,9 +64,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const fallbackProfile: UserProfile = {
         id: userId,
         email: userEmail,
-        full_name: userEmail.split('@')[0],
-        role: 'staff',
-        job_position: 'Staff Proyek',
+        full_name: isOwner ? 'Felix Salim (Project Director)' : userEmail.split('@')[0],
+        role: isOwner ? 'admin' : 'staff',
+        job_position: isOwner ? 'Project Director' : 'Staff Proyek',
         is_active: true,
         created_at: new Date().toISOString(),
       };
