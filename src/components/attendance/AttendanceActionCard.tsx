@@ -75,6 +75,12 @@ export function AttendanceActionCard({
     setIsSubmitting(true);
     setErrorMessage(null);
 
+    const isUUID = (str?: string) =>
+      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
+    const cleanSiteId = isUUID(site?.id) ? site.id : '11111111-1111-1111-1111-111111111111';
+    const cleanUserId = isUUID(user?.id) ? user.id : '00000000-0000-0000-0000-000000000001';
+
     try {
       const response = await fetch('/api/attendance', {
         method: 'POST',
@@ -83,8 +89,8 @@ export function AttendanceActionCard({
         },
         body: JSON.stringify({
           action: actionType,
-          userId: user.id,
-          siteId: site.id,
+          userId: cleanUserId,
+          siteId: cleanSiteId,
           latitude,
           longitude,
           accuracy,

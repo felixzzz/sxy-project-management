@@ -12,14 +12,34 @@ import { GeolocationState, ProjectSite, AttendanceRecord } from '@/types/attenda
 import { isWithinGeofence, isGpsAccuracyAcceptable } from '@/lib/geo/haversine';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
-import { Info, Loader2 } from 'lucide-react';
+import { Info, Loader2, AlertCircle } from 'lucide-react';
 
 export default function HomePage() {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
 
-  const [site] = useState<ProjectSite>(DEFAULT_SITE);
+  const [site, setSite] = useState<ProjectSite>(DEFAULT_SITE);
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
+
+  // Ambil site aktif terkini dari Supabase jika ada
+  useEffect(() => {
+    async function loadSite() {
+      const supabase = createClient();
+      if (!supabase) return;
+      const { data } = await supabase
+        .from('project_sites')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        setSite(data);
+      }
+    }
+    loadSite();
+  }, []);
 
   // Status GPS Pengguna
   const [geoState, setGeoState] = useState<GeolocationState>({
@@ -194,17 +214,40 @@ export default function HomePage() {
           />
         </div>
 
+        {/* Banner Akun Nonaktif */}
+        {user.is_active === false && (
+          <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl flex items-start gap-3 text-rose-800 dark:text-rose-200">
+            <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <p className="font-bold text-rose-900 dark:text-rose-100">Status Akun: Nonaktif</p>
+              <p>
+                Akun Anda telah dinonaktifkan oleh Administrator. Anda tidak dapat melakukan absensi.
+                Silakan hubungi koordinator proyek untuk informasi lebih lanjut.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 3. Action Card: Jam Digital, Kamera Selfie Realtime, & Tombol Absen */}
-        <AttendanceActionCard
-          user={user}
-          site={site}
-          geoState={geoState}
-          hasCheckedInToday={Boolean(todayRecord?.check_in_time)}
-          hasCheckedOutToday={Boolean(todayRecord?.check_out_time)}
-          checkInTimeToday={todayRecord?.check_in_time}
-          checkOutTimeToday={todayRecord?.check_out_time}
-          onAttendanceSuccess={handleAttendanceSuccess}
-        />
+        {user.is_active !== false ? (
+          <AttendanceActionCard
+            user={user}
+            site={site}
+            geoState={geoState}
+            hasCheckedInToday={Boolean(todayRecord?.check_in_time)}
+            hasCheckedOutToday={Boolean(todayRecord?.check_out_time)}
+            checkInTimeToday={todayRecord?.check_in_time}
+            checkOutTimeToday={todayRecord?.check_out_time}
+            onAttendanceSuccess={handleAttendanceSuccess}
+          />
+        ) : (
+          <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-2">
+            <p className="text-xs font-semibold text-slate-500">Akses Absensi Dibatasi</p>
+            <p className="text-[11px] text-slate-400">
+              Tombol absensi dikunci karena status keanggotaan Anda nonaktif.
+            </p>
+          </div>
+        )}
 
         {/* Petunjuk Penggunaan Lapangan */}
         <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">

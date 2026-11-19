@@ -26,10 +26,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Ambil Data Site Proyek (Sekolah Guang Ming Pusat)
-    const site = DEFAULT_SITE;
-
-    // Sanitasi UUID agar selalu kompatibel dengan tipe UUID Postgres
+    // 2. Sanitasi UUID agar selalu kompatibel dengan tipe UUID Postgres
     const isValidUUID = (id?: string) =>
       Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
 
@@ -40,6 +37,44 @@ export async function POST(req: NextRequest) {
     const safeUserId = isValidUUID(userId)
       ? userId
       : '00000000-0000-0000-0000-000000000001';
+
+    // Ambil Data Site Terkini dari Database atau Fallback DEFAULT_SITE
+    let site = DEFAULT_SITE;
+    let supabase = null;
+
+    if (isSupabaseConfigured()) {
+      supabase = await createServerSupabaseClient();
+      if (supabase) {
+        // Cek status keaktifan akun pengguna
+        const { data: userProfile } = await supabase
+          .from('profiles')
+          .select('is_active, full_name')
+          .eq('id', safeUserId)
+          .maybeSingle();
+
+        if (userProfile && userProfile.is_active === false) {
+          return NextResponse.json(
+            {
+              error: `Absensi Ditolak: Akun atas nama ${userProfile.full_name || 'pengguna'} sedang dinonaktifkan oleh Administrator proyek.`,
+            },
+            { status: 403 }
+          );
+        }
+
+        // Ambil konfigurasi site aktif terkini
+        const { data: dbSite } = await supabase
+          .from('project_sites')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (dbSite) {
+          site = dbSite;
+        }
+      }
+    }
 
     // 3. SERVER-SIDE GEOFENCE VALIDATION (Wajib dihitung ulang di server demi keamanan)
     const verifiedDistanceMeters = calculateDistanceHaversine(
@@ -54,7 +89,7 @@ export async function POST(req: NextRequest) {
     if (!isWithinGeofence) {
       return NextResponse.json(
         {
-          error: `Absensi Ditolak: Anda berada di luar radius area Sekolah Guang Ming Pusat. Jarak Anda: ${Math.round(
+          error: `Absensi Ditolak: Anda berada di luar radius area ${site.name}. Jarak Anda: ${Math.round(
             verifiedDistanceMeters
           )} meter (Batas toleransi maksimal: ${site.radius_meters} meter).`,
           verifiedDistanceMeters,
@@ -64,24 +99,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Jika Supabase Sudah Dikonfigurasi di Environment
-    if (isSupabaseConfigured()) {
-      const supabase = await createServerSupabaseClient();
-      if (supabase) {
-        // Pastikan record project_site terdaftar di database
-        try {
-          await supabase.from('project_sites').upsert({
-            id: safeSiteId,
-            name: site.name,
-            address: site.address,
-            latitude: site.latitude,
-            longitude: site.longitude,
-            radius_meters: site.radius_meters,
-            is_active: true,
-          });
-        } catch (err) {
-          console.warn('Upsert project_site error:', err);
-        }
+    // 4. Simpan ke Supabase jika terkonfigurasi
+    if (supabase) {
+      // Pastikan record project_site terdaftar di database
+      try {
+        await supabase.from('project_sites').upsert({
+          id: safeSiteId,
+          name: site.name,
+          address: site.address,
+          latitude: site.latitude,
+          longitude: site.longitude,
+          radius_meters: site.radius_meters,
+          is_active: true,
+        });
+      } catch (err) {
+        console.warn('Upsert project_site error:', err);
+      }
 
         // Upload foto ke Supabase Storage (attendance-photos)
         let photoUrl = photoBase64;
@@ -163,7 +196,6 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: true, data });
         }
       }
-    }
 
     // 5. Fallback Mock Response (Saat user belum memasukkan API keys Supabase di .env.local)
     const newRecord = {

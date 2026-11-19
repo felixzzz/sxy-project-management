@@ -41,12 +41,19 @@ export default function LoginPage() {
 
       const isOwner = email.toLowerCase() === 'felix@salim.bz';
 
-      // Cek role pengguna untuk pengalihan halaman
+      // Cek role dan status keaktifan pengguna
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, is_active')
         .eq('id', data.user.id)
         .maybeSingle();
+
+      if (profile && profile.is_active === false && !isOwner) {
+        await supabase.auth.signOut();
+        setErrorMessage('Akun Anda telah dinonaktifkan oleh Administrator. Silakan hubungi koordinator proyek.');
+        setIsLoading(false);
+        return;
+      }
 
       if (isOwner || profile?.role === 'admin') {
         router.push('/admin');
