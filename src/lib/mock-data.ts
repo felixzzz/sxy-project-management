@@ -8,6 +8,15 @@ export const DEFAULT_SITE: ProjectSite = {
   longitude: parseFloat(process.env.NEXT_PUBLIC_DEFAULT_SITE_LNG || '106.7420345'),
   radius_meters: parseInt(process.env.NEXT_PUBLIC_DEFAULT_SITE_RADIUS || '100', 10),
   is_active: true,
+  work_start_time: '08:00',
+  work_end_time: '17:00',
+  late_tolerance_minutes: 15,
+  work_days: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
+  require_selfie: true,
+  max_gps_accuracy: 50,
+  allow_overtime: true,
+  emergency_contact: '0811-9876-5432 (Hendra Wijaya - Project Director)',
+  announcement: 'Wajib mengenakan rompi keselamatan dan helm proyek di seluruh zona pembangunan struktur Sekolah Guang Ming.',
 };
 
 export const MOCK_USERS: UserProfile[] = [

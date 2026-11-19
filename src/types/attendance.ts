@@ -20,6 +20,16 @@ export interface ProjectSite {
   longitude: number;
   radius_meters: number;
   is_active: boolean;
+  // Pengaturan Operasional & Kebijakan
+  work_start_time?: string;
+  work_end_time?: string;
+  late_tolerance_minutes?: number;
+  work_days?: string[];
+  require_selfie?: boolean;
+  max_gps_accuracy?: number;
+  allow_overtime?: boolean;
+  emergency_contact?: string;
+  announcement?: string;
 }
 
 export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'overtime';

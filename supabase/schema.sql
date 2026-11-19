@@ -29,9 +29,29 @@ CREATE TABLE IF NOT EXISTS public.project_sites (
     longitude DOUBLE PRECISION NOT NULL,
     radius_meters INTEGER NOT NULL DEFAULT 100,
     is_active BOOLEAN DEFAULT TRUE,
+    work_start_time TEXT DEFAULT '08:00',
+    work_end_time TEXT DEFAULT '17:00',
+    late_tolerance_minutes INTEGER DEFAULT 15,
+    work_days TEXT[] DEFAULT ARRAY['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
+    require_selfie BOOLEAN DEFAULT TRUE,
+    max_gps_accuracy INTEGER DEFAULT 50,
+    allow_overtime BOOLEAN DEFAULT TRUE,
+    emergency_contact TEXT DEFAULT '0811-9876-5432 (Hendra Wijaya - Project Director)',
+    announcement TEXT DEFAULT 'Wajib mengenakan rompi keselamatan dan helm proyek di seluruh zona pembangunan struktur Sekolah Guang Ming.',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Kolom migrasi idempotensi jika tabel sudah ada sebelumnya
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS work_start_time TEXT DEFAULT '08:00';
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS work_end_time TEXT DEFAULT '17:00';
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS late_tolerance_minutes INTEGER DEFAULT 15;
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS work_days TEXT[] DEFAULT ARRAY['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS require_selfie BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS max_gps_accuracy INTEGER DEFAULT 50;
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS allow_overtime BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS emergency_contact TEXT DEFAULT '0811-9876-5432 (Hendra Wijaya - Project Director)';
+ALTER TABLE public.project_sites ADD COLUMN IF NOT EXISTS announcement TEXT DEFAULT 'Wajib mengenakan rompi keselamatan dan helm proyek di seluruh zona pembangunan struktur Sekolah Guang Ming.';
 
 -- 3. TABEL CATATAN ABSENSI (ATTENDANCES)
 CREATE TABLE IF NOT EXISTS public.attendances (

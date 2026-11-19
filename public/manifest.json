@@ -1,16 +1,36 @@
 {
-  "name": "SXY Absensi - Sekolah Guang Ming Pusat",
-  "short_name": "SXY Absensi",
-  "description": "Aplikasi Absensi Staff Lapangan Proyek Sekolah Guang Ming Pusat",
+  "name": "SXY Absensi - Yayasan Guang Ji Indonesia",
+  "short_name": "Guang Ji",
+  "description": "Sistem Presensi Lapangan Yayasan Guang Ji Indonesia - Proyek Pembangunan Sekolah Guang Ming Pusat",
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#020617",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "/favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "447x447",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
     }
   ]
 }

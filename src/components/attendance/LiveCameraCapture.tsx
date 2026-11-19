@@ -99,26 +99,31 @@ export function LiveCameraCapture({
         : 'Jarak tidak diketahui';
 
     // Banner gelap di bagian bawah
-    const bannerHeight = 90;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    const bannerHeight = 100;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
     ctx.fillRect(0, height - bannerHeight, width, bannerHeight);
 
-    // Garis aksen indikator hijau/merah
-    ctx.fillStyle = isWithinRadius ? '#10b981' : '#f43f5e';
+    // Garis aksen indikator hijau/merah (sesuai palet logo)
+    ctx.fillStyle = isWithinRadius ? '#15803d' : '#dc2626';
     ctx.fillRect(0, height - bannerHeight, width, 4);
 
-    // Teks Watermark
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.fillText(`👤 ${staffName}`, 16, height - bannerHeight + 24);
+    // Identitas Resmi Yayasan Guang Ji
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('🏛️ YAYASAN GUANG JI INDONESIA • SEKOLAH GUANG MING PUSAT', 16, height - bannerHeight + 20);
 
-    ctx.font = '13px monospace';
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillText(`🕒 ${timestamp} WIB`, 16, height - bannerHeight + 46);
+    // Teks Watermark Staff & Waktu
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(`👤 ${staffName}`, 16, height - bannerHeight + 42);
 
     ctx.font = '12px monospace';
-    ctx.fillStyle = isWithinRadius ? '#34d399' : '#fb7185';
-    ctx.fillText(`📍 GPS: ${coordsText} • ${distText}`, 16, height - bannerHeight + 68);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(`🕒 ${timestamp} WIB`, 16, height - bannerHeight + 64);
+
+    ctx.font = '11px monospace';
+    ctx.fillStyle = isWithinRadius ? '#4ade80' : '#f87171';
+    ctx.fillText(`📍 GPS: ${coordsText} • ${distText}`, 16, height - bannerHeight + 84);
   };
 
   // Jepret foto dari live video stream
@@ -286,8 +291,8 @@ export function LiveCameraCapture({
 
             {/* Overlay Target Framing */}
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6">
-              <div className="w-56 h-64 border-2 border-dashed border-white/60 rounded-3xl mb-8 flex items-end justify-center pb-3">
-                <span className="text-[11px] bg-black/60 px-2.5 py-1 rounded-full text-slate-200">
+              <div className="w-56 h-64 border-2 border-dashed border-amber-300/60 rounded-3xl mb-8 flex items-end justify-center pb-3">
+                <span className="text-[11px] bg-black/70 px-2.5 py-1 rounded-full text-amber-200 font-medium">
                   Posisikan Wajah di Sini
                 </span>
               </div>
@@ -333,7 +338,7 @@ export function LiveCameraCapture({
             </button>
             <button
               onClick={handleConfirm}
-              className="flex-1 py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-semibold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-emerald-950/50"
+              className="flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-emerald-950/50 text-white cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4" />
               Gunakan Foto
@@ -344,7 +349,7 @@ export function LiveCameraCapture({
             <button
               onClick={capturePhoto}
               disabled={isLoading || Boolean(cameraError)}
-              className="w-20 h-20 rounded-full border-4 border-white/80 p-1 flex items-center justify-center active:scale-90 transition-transform disabled:opacity-50"
+              className="w-20 h-20 rounded-full border-4 border-amber-400/90 p-1 flex items-center justify-center active:scale-90 transition-transform disabled:opacity-50 cursor-pointer shadow-lg shadow-amber-500/20"
               aria-label="Jepret Foto"
             >
               <div className="w-full h-full bg-white rounded-full flex items-center justify-center shadow-lg">

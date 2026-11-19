@@ -21,12 +21,12 @@ export function GeofenceStatusCard({
   const { status, distanceToSite, accuracy, isWithinRadius, errorMessage } = geoState;
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-amber-500/15 dark:border-amber-500/10 shadow-sm transition-all">
       {/* Top Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-            <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/40">
+            <MapPin className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           </div>
           <div>
             <h4 className="font-semibold text-xs text-slate-900 dark:text-white leading-tight">
@@ -41,7 +41,7 @@ export function GeofenceStatusCard({
         <button
           type="button"
           onClick={onRefreshGPS}
-          className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+          className="p-2 rounded-lg bg-slate-50 hover:bg-amber-50 dark:bg-slate-800 dark:hover:bg-amber-950/40 text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer"
           title="Perbarui Sinyal GPS"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${status === 'requesting' ? 'animate-spin' : ''}`} />

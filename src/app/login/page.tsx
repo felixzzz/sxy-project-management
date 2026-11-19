@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { HardHat, Lock, Mail, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import Image from 'next/image';
+import { Lock, Mail, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -74,23 +75,46 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-center px-4 py-8">
-      <div className="max-w-sm w-full mx-auto space-y-5">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex flex-col justify-center px-4 py-8 relative overflow-hidden">
+      {/* Decorative ambient background glows using Guang Ji palette */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-60 h-60 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="max-w-sm w-full mx-auto space-y-5 relative z-10">
         {/* Brand Header */}
-        <div className="text-center space-y-1.5">
-          <div className="w-13 h-13 bg-emerald-600 rounded-2xl mx-auto flex items-center justify-center text-white shadow-xl shadow-emerald-950/40 p-3">
-            <HardHat className="w-7 h-7" />
+        <div className="text-center space-y-2">
+          {/* Logo Guang Ji with Halo */}
+          <div className="relative mx-auto w-24 h-24 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-amber-500/30 via-emerald-500/20 to-rose-500/20 blur-xl animate-pulse" />
+            <div className="relative w-22 h-22 rounded-full p-1 bg-gradient-to-tr from-amber-500 via-amber-300 to-emerald-600 shadow-xl shadow-amber-500/20 flex items-center justify-center">
+              <div className="w-full h-full rounded-full bg-white p-1 flex items-center justify-center overflow-hidden">
+                <Image
+                  src="/logo.png"
+                  alt="Logo Yayasan Guang Ji"
+                  width={80}
+                  height={80}
+                  priority
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </div>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-white">
-            SXY Absensi Lapangan
-          </h1>
-          <p className="text-xs text-slate-400">
-            Proyek Sekolah Guang Ming Pusat
-          </p>
+
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-semibold tracking-wide mb-1">
+              Yayasan Guang Ji Indonesia
+            </div>
+            <h1 className="text-xl font-extrabold tracking-tight text-white">
+              SXY Absensi Lapangan
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Proyek Pembangunan Sekolah Guang Ming Pusat
+            </p>
+          </div>
         </div>
 
         {/* Card Form Login */}
-        <div className="bg-slate-800/90 backdrop-blur-md rounded-2xl p-6 border border-slate-700 shadow-xl space-y-4">
+        <div className="bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 border border-amber-500/20 shadow-2xl shadow-black/50 space-y-4">
           <div>
             <h2 className="text-sm font-bold text-white">Masuk Akun</h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -111,14 +135,14 @@ export default function LoginPage() {
                 Email Terdaftar
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-amber-500/70 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="email"
                   required
                   placeholder="nama@guangming.sch.id"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500"
                 />
               </div>
             </div>
@@ -128,14 +152,14 @@ export default function LoginPage() {
                 Kata Sandi
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-amber-500/70 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
                   required
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500"
                 />
               </div>
             </div>
@@ -143,7 +167,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/30 active:scale-[0.98] transition-transform disabled:opacity-50 mt-2"
+              className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 active:scale-[0.98] transition-all disabled:opacity-50 mt-2 cursor-pointer"
             >
               {isLoading ? (
                 <>
@@ -153,7 +177,7 @@ export default function LoginPage() {
               ) : (
                 <>
                   <span>Masuk Aplikasi</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                 </>
               )}
             </button>
@@ -161,12 +185,12 @@ export default function LoginPage() {
         </div>
 
         {/* Footer info: Akun dibuat oleh admin */}
-        <div className="p-3.5 bg-slate-800/40 border border-slate-800 rounded-xl text-center space-y-1">
-          <p className="text-[11px] font-medium text-slate-400">
+        <div className="p-3.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-center space-y-1">
+          <p className="text-[11px] font-medium text-amber-400/90">
             🔒 Pendaftaran Akun Dibatasi
           </p>
-          <p className="text-[10px] text-slate-500 leading-relaxed">
-            Akun staff dan mandor hanya dapat didaftarkan langsung oleh Admin Proyek. Hubungi Admin jika Anda belum memiliki akses.
+          <p className="text-[10px] text-slate-400 leading-relaxed">
+            Akun staff dan mandor didaftarkan langsung oleh Admin Yayasan Guang Ji. Hubungi Admin jika Anda belum memiliki akses.
           </p>
         </div>
       </div>

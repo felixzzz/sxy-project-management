@@ -48,28 +48,28 @@ export function SiteRadiusMap({
         maxZoom: 19,
       }).addTo(map);
 
-      // Custom Icon untuk Site Proyek
+      // Custom Icon untuk Site Proyek dengan Logo Yayasan Guang Ji
       const siteIcon = L.divIcon({
         className: 'custom-site-marker',
         html: `
-          <div style="background-color: #0f172a; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 2px solid #ffffff; font-size: 16px;">
-            🏗️
+          <div style="background: linear-gradient(135deg, #f59e0b, #15803d); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.35); border: 2px solid #ffffff; overflow: hidden; padding: 2px;">
+            <img src="/logo.png" alt="Guang Ji" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%; background: #ffffff;" />
           </div>
         `,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
       });
 
       // Pin Lokasi Proyek
       L.marker([siteLat, siteLng], { icon: siteIcon })
         .addTo(map)
-        .bindPopup(`<b>${siteName}</b><br/>Area Absensi Sah (Radius: ${radiusMeters}m)`);
+        .bindPopup(`<b>${siteName}</b><br/>Area Absensi Sah Yayasan Guang Ji (Radius: ${radiusMeters}m)`);
 
-      // Lingkaran Radius Geofence
+      // Lingkaran Radius Geofence (mengikuti palet hijau jade & merah logo)
       const siteCircle = L.circle([siteLat, siteLng], {
         radius: radiusMeters,
-        color: isWithinRadius ? '#10b981' : '#f59e0b',
-        fillColor: isWithinRadius ? '#10b981' : '#f59e0b',
+        color: isWithinRadius ? '#15803d' : '#f59e0b',
+        fillColor: isWithinRadius ? '#15803d' : '#f59e0b',
         fillOpacity: 0.18,
         weight: 2,
         dashArray: '4, 4',
@@ -82,8 +82,8 @@ export function SiteRadiusMap({
     // Update lingkaran jika status berubah
     if (siteCircleRef.current) {
       siteCircleRef.current.setStyle({
-        color: isWithinRadius ? '#10b981' : '#f43f5e',
-        fillColor: isWithinRadius ? '#10b981' : '#f43f5e',
+        color: isWithinRadius ? '#15803d' : '#dc2626',
+        fillColor: isWithinRadius ? '#15803d' : '#dc2626',
       });
     }
 
@@ -93,7 +93,7 @@ export function SiteRadiusMap({
       const userIcon = L.divIcon({
         className: 'custom-user-marker',
         html: `
-          <div style="background-color: #2563eb; width: 18px; height: 18px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.4);">
+          <div style="background-color: #f59e0b; width: 18px; height: 18px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.45);">
           </div>
         `,
         iconSize: [18, 18],

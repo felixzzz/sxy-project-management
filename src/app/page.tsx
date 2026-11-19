@@ -170,8 +170,8 @@ export default function HomePage() {
 
   if (isAuthLoading || !user) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
         <p className="text-xs text-slate-400">Memeriksa autentikasi...</p>
       </div>
     );
@@ -183,7 +183,31 @@ export default function HomePage() {
       <AppHeader user={user} />
 
       {/* Main Container */}
-      <main className="max-w-md mx-auto px-4 pt-4 space-y-4">
+      <main className="max-w-md mx-auto px-4 pt-3.5 space-y-4">
+        {/* Banner Identitas & Pengumuman Yayasan Guang Ji */}
+        <div className="px-3.5 py-3 rounded-2xl bg-gradient-to-r from-amber-500/15 via-emerald-500/10 to-transparent border border-amber-500/25 dark:border-amber-500/20 shadow-xs space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-extrabold tracking-wider uppercase text-amber-700 dark:text-amber-400">
+              Yayasan Guang Ji Indonesia
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                {site.work_start_time || '08:00'} - {site.work_end_time || '17:00'} WIB
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Sistem Aktif" />
+            </div>
+          </div>
+          <p className="text-xs font-bold text-slate-900 dark:text-white">
+            Presensi Proyek Sekolah Guang Ming Pusat
+          </p>
+          {site.announcement && (
+            <div className="pt-1 border-t border-amber-500/20 text-[11px] text-amber-800 dark:text-amber-300 font-medium flex items-start gap-1.5 leading-relaxed">
+              <span className="shrink-0 mt-0.5">📢</span>
+              <span>{site.announcement}</span>
+            </div>
+          )}
+        </div>
+
         {/* 1. Radar & Status Geofencing Asli */}
         <GeofenceStatusCard
           geoState={geoState}
@@ -193,12 +217,12 @@ export default function HomePage() {
         />
 
         {/* 2. Mini Map Visualizer (Leaflet + OpenStreetMap) */}
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-amber-500/15 dark:border-amber-500/10 shadow-sm">
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
               Peta Lokasi & Radius Izin Absen
             </span>
-            <span className="text-[11px] text-slate-500 font-mono">
+            <span className="text-[11px] text-amber-700 dark:text-amber-400 font-mono font-medium">
               Radius: {site.radius_meters}m
             </span>
           </div>

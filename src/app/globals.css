@@ -1,6 +1,18 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+@theme {
+  --color-guangji-gold: #f59e0b;
+  --color-guangji-gold-dark: #d97706;
+  --color-guangji-gold-deep: #b45309;
+  --color-guangji-gold-light: #fef3c7;
+  --color-guangji-jade: #15803d;
+  --color-guangji-jade-dark: #166534;
+  --color-guangji-jade-light: #dcfce7;
+  --color-guangji-red: #dc2626;
+  --color-guangji-pink: #ec4899;
+}
+
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;

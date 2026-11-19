@@ -14,13 +14,25 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SXY Absensi - Proyek Sekolah Guang Ming Pusat",
-  description: "Web apps absensi staff proyek dengan verifikasi geolokasi presisi & foto selfie realtime",
+  title: "SXY Absensi - Yayasan Guang Ji Indonesia | Sekolah Guang Ming",
+  description: "Sistem Presensi Lapangan Yayasan Guang Ji Indonesia untuk Proyek Pembangunan Sekolah Guang Ming Pusat dengan verifikasi geolokasi presisi & foto selfie realtime",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/apple-icon.png", sizes: "447x447", type: "image/png" },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "SXY Absensi",
+    title: "Guang Ji",
   },
 };
 
@@ -29,7 +41,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#0f172a",
+  themeColor: "#f59e0b",
 };
 
 export default function RootLayout({
