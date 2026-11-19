@@ -10,8 +10,6 @@ interface GeofenceStatusCardProps {
   siteName: string;
   allowedRadius: number;
   onRefreshGPS: () => void;
-  isDemoMode?: boolean;
-  onToggleDemoRange?: () => void;
 }
 
 export function GeofenceStatusCard({
@@ -19,8 +17,6 @@ export function GeofenceStatusCard({
   siteName,
   allowedRadius,
   onRefreshGPS,
-  isDemoMode,
-  onToggleDemoRange,
 }: GeofenceStatusCardProps) {
   const { status, distanceToSite, accuracy, isWithinRadius, errorMessage } = geoState;
 
@@ -132,17 +128,7 @@ export function GeofenceStatusCard({
             </strong>
           </span>
         </div>
-
-        {/* Simulasi tombol Demo jika sedang testing */}
-        {onToggleDemoRange && (
-          <button
-            type="button"
-            onClick={onToggleDemoRange}
-            className="text-[10px] underline text-blue-600 dark:text-blue-400 font-medium"
-          >
-            {isWithinRadius ? 'Simulasi: Keluar Radius' : 'Simulasi: Masuk Radius'}
-          </button>
-        )}
+        <span className="text-[10px] text-slate-400 font-mono">GPS Satelit Aktif</span>
       </div>
     </div>
   );

@@ -1,28 +1,93 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { BottomNav } from '@/components/navigation/BottomNav';
 import { DynamicSiteMap } from '@/components/map/DynamicSiteMap';
-import { DEFAULT_SITE, MOCK_USERS } from '@/lib/mock-data';
-import { ProjectSite, UserProfile } from '@/types/attendance';
-import { ArrowLeft, Save, MapPin, CheckCircle2, Sliders } from 'lucide-react';
+import { DEFAULT_SITE } from '@/lib/mock-data';
+import { ProjectSite } from '@/types/attendance';
+import { ArrowLeft, Save, CheckCircle2, Sliders, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 
 export default function AdminSiteSettingsPage() {
-  const [currentUser] = useState<UserProfile>(MOCK_USERS[1]); // Admin
+  const router = useRouter();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
   const [site, setSite] = useState<ProjectSite>(DEFAULT_SITE);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!isAuthLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (user.role !== 'admin') {
+        router.push('/');
+      }
+    }
+  }, [user, isAuthLoading, router]);
+
+  useEffect(() => {
+    async function loadSite() {
+      const supabase = createClient();
+      if (!supabase) return;
+
+      const { data } = await supabase
+        .from('project_sites')
+        .select('*')
+        .eq('id', DEFAULT_SITE.id)
+        .maybeSingle();
+
+      if (data) {
+        setSite(data as ProjectSite);
+      }
+    }
+
+    loadSite();
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setIsSaving(true);
+    setSavedSuccess(false);
+
+    try {
+      const supabase = createClient();
+      if (supabase) {
+        await supabase.from('project_sites').upsert({
+          id: site.id,
+          name: site.name,
+          address: site.address,
+          latitude: site.latitude,
+          longitude: site.longitude,
+          radius_meters: site.radius_meters,
+          is_active: true,
+        });
+      }
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    } catch (err) {
+      console.error('Save site error:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  if (isAuthLoading || !user || user.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+        <p className="text-xs text-slate-400">Memeriksa hak akses...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-24">
-      <AppHeader user={currentUser} />
+      <AppHeader user={user} />
 
       <main className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
         {/* Breadcrumb / Back button */}
@@ -86,7 +151,7 @@ export default function AdminSiteSettingsPage() {
               </label>
               <input
                 type="number"
-                step="0.000001"
+                step="0.0000001"
                 value={site.latitude}
                 onChange={(e) => setSite({ ...site, latitude: parseFloat(e.target.value) || 0 })}
                 className="w-full text-xs font-mono px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -99,7 +164,7 @@ export default function AdminSiteSettingsPage() {
               </label>
               <input
                 type="number"
-                step="0.000001"
+                step="0.0000001"
                 value={site.longitude}
                 onChange={(e) => setSite({ ...site, longitude: parseFloat(e.target.value) || 0 })}
                 className="w-full text-xs font-mono px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -155,16 +220,17 @@ export default function AdminSiteSettingsPage() {
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/20 active:scale-[0.98] transition-transform"
+              disabled={isSaving}
+              className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/20 active:scale-[0.98] transition-transform disabled:opacity-50"
             >
-              <Save className="w-4 h-4" />
-              <span>Simpan Perubahan Koordinat & Radius</span>
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>{isSaving ? 'Menyimpan ke Database...' : 'Simpan Perubahan Koordinat & Radius'}</span>
             </button>
           </div>
         </form>
       </main>
 
-      <BottomNav userRole={currentUser.role} />
+      <BottomNav userRole={user.role} />
     </div>
   );
 }

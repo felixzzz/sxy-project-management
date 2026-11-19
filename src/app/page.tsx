@@ -1,19 +1,25 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { BottomNav } from '@/components/navigation/BottomNav';
 import { GeofenceStatusCard } from '@/components/attendance/GeofenceStatusCard';
 import { AttendanceActionCard } from '@/components/attendance/AttendanceActionCard';
 import { DynamicSiteMap } from '@/components/map/DynamicSiteMap';
-import { DEFAULT_SITE, MOCK_USERS } from '@/lib/mock-data';
-import { GeolocationState, ProjectSite, UserProfile, AttendanceRecord } from '@/types/attendance';
+import { DEFAULT_SITE } from '@/lib/mock-data';
+import { GeolocationState, ProjectSite, AttendanceRecord } from '@/types/attendance';
 import { isWithinGeofence, isGpsAccuracyAcceptable } from '@/lib/geo/haversine';
-import { AlertCircle, Info, Sparkles } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
+import { Info, Loader2 } from 'lucide-react';
 
 export default function HomePage() {
-  const [currentUser, setCurrentUser] = useState<UserProfile>(MOCK_USERS[0]); // Default Staff Budi
-  const [site, setSite] = useState<ProjectSite>(DEFAULT_SITE);
+  const router = useRouter();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  const [site] = useState<ProjectSite>(DEFAULT_SITE);
+  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
 
   // Status GPS Pengguna
   const [geoState, setGeoState] = useState<GeolocationState>({
@@ -25,11 +31,39 @@ export default function HomePage() {
     isWithinRadius: false,
   });
 
-  // State Simulasi (untuk mempermudah testing di laptop/development sebelum turun ke site fisik)
-  const [isDemoSimulated, setIsDemoSimulated] = useState<boolean>(false);
+  // Wajib Login: Redirect ke /login jika belum login
+  useEffect(() => {
+    if (!isAuthLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, isAuthLoading, router]);
 
-  // Status Absensi Hari Ini
-  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
+  // Ambil data absensi user hari ini dari Supabase
+  useEffect(() => {
+    async function fetchTodayAttendance() {
+      if (!user) return;
+      const supabase = createClient();
+      if (!supabase) return;
+
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const { data, error } = await supabase
+        .from('attendances')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('check_in_time', todayStart.toISOString())
+        .order('check_in_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data) {
+        setTodayRecord(data);
+      }
+    }
+
+    fetchTodayAttendance();
+  }, [user]);
 
   // Fungsi mengkalkulasi status geofence
   const updateGeoPosition = useCallback(
@@ -56,10 +90,8 @@ export default function HomePage() {
     [site.latitude, site.longitude, site.radius_meters]
   );
 
-  // Start HTML5 Geolocation Watcher
+  // Start HTML5 Geolocation Watcher Asli dari HP/Perangkat
   const initGeolocation = useCallback(() => {
-    if (isDemoSimulated) return; // Jika mode simulasi aktif, jangan timpa dengan GPS asli laptop
-
     if (!('geolocation' in navigator)) {
       setGeoState((prev) => ({
         ...prev,
@@ -83,7 +115,7 @@ export default function HomePage() {
 
         if (error.code === error.PERMISSION_DENIED) {
           statusText = 'permission_denied';
-          message = 'Izin lokasi ditolak di browser HP Anda.';
+          message = 'Izin lokasi ditolak di browser HP Anda. Harap aktifkan izin lokasi.';
         } else if (error.code === error.TIMEOUT) {
           statusText = 'timeout';
           message = 'Waktu pencarian satelit GPS habis.';
@@ -103,7 +135,7 @@ export default function HomePage() {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [isDemoSimulated, updateGeoPosition]);
+  }, [updateGeoPosition]);
 
   useEffect(() => {
     const cleanup = initGeolocation();
@@ -112,66 +144,32 @@ export default function HomePage() {
     };
   }, [initGeolocation]);
 
-  // Handler toggle simulasi (Dalam Site vs Luar Site) untuk kemudahan pengujian
-  const handleToggleDemoSimulation = () => {
-    if (!isDemoSimulated || !geoState.isWithinRadius) {
-      // Set simulasi DALAM AREA (18 meter dari titik tengah site)
-      setIsDemoSimulated(true);
-      const simulatedLat = site.latitude + 0.0001;
-      const simulatedLng = site.longitude + 0.0001;
-      updateGeoPosition(simulatedLat, simulatedLng, 5.0);
-    } else {
-      // Set simulasi DI LUAR AREA (450 meter dari titik site)
-      setIsDemoSimulated(true);
-      const simulatedLat = site.latitude + 0.004;
-      const simulatedLng = site.longitude + 0.004;
-      updateGeoPosition(simulatedLat, simulatedLng, 12.0);
-    }
-  };
-
-  const handleRoleSwitch = (newRole: 'staff' | 'admin') => {
-    const targetUser = MOCK_USERS.find((u) => u.role === newRole) || MOCK_USERS[0];
-    setCurrentUser(targetUser);
-  };
-
   const handleAttendanceSuccess = (newRecord: AttendanceRecord) => {
     setTodayRecord(newRecord);
   };
 
+  if (isAuthLoading || !user) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+        <p className="text-xs text-slate-400">Memeriksa autentikasi...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-24">
       {/* Top Header */}
-      <AppHeader user={currentUser} onSwitchRole={handleRoleSwitch} />
+      <AppHeader user={user} />
 
       {/* Main Container */}
       <main className="max-w-md mx-auto px-4 pt-4 space-y-4">
-        {/* Banner Info Simulasi / Demo */}
-        <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-xs text-blue-900 dark:text-blue-200 flex items-start justify-between gap-2">
-          <div className="flex items-start gap-2">
-            <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold">Mode Uji Coba Lapangan Aktif</p>
-              <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
-                Gunakan tombol simulasi di bawah untuk menguji verifikasi geofencing (Dalam vs Luar Site).
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleToggleDemoSimulation}
-            className="shrink-0 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[11px] font-medium active:scale-95 transition-transform"
-          >
-            {geoState.isWithinRadius ? 'Simulasi: Ke Luar' : 'Simulasi: Ke Dalam'}
-          </button>
-        </div>
-
-        {/* 1. Radar & Status Geofencing */}
+        {/* 1. Radar & Status Geofencing Asli */}
         <GeofenceStatusCard
           geoState={geoState}
           siteName={site.name}
           allowedRadius={site.radius_meters}
           onRefreshGPS={initGeolocation}
-          isDemoMode={isDemoSimulated}
-          onToggleDemoRange={handleToggleDemoSimulation}
         />
 
         {/* 2. Mini Map Visualizer (Leaflet + OpenStreetMap) */}
@@ -198,7 +196,7 @@ export default function HomePage() {
 
         {/* 3. Action Card: Jam Digital, Kamera Selfie Realtime, & Tombol Absen */}
         <AttendanceActionCard
-          user={currentUser}
+          user={user}
           site={site}
           geoState={geoState}
           hasCheckedInToday={Boolean(todayRecord?.check_in_time)}
@@ -220,7 +218,7 @@ export default function HomePage() {
       </main>
 
       {/* Bottom Safe Navigation */}
-      <BottomNav userRole={currentUser.role} />
+      <BottomNav userRole={user.role} />
     </div>
   );
 }

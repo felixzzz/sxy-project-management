@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { BottomNav } from '@/components/navigation/BottomNav';
-import { MOCK_ATTENDANCES, MOCK_USERS, DEFAULT_SITE } from '@/lib/mock-data';
+import { DEFAULT_SITE } from '@/lib/mock-data';
 import { AttendanceRecord, UserProfile } from '@/types/attendance';
 import { formatTimeID, formatDateID } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 import {
   Users,
   CheckCircle2,
@@ -19,13 +22,75 @@ import {
   MapPin,
   X,
   ShieldCheck,
+  Loader2,
+  UserCheck,
 } from 'lucide-react';
 
 export default function AdminDashboardPage() {
-  const [currentUser, setCurrentUser] = useState<UserProfile>(MOCK_USERS[1]); // Admin Hendra
-  const [attendances] = useState<AttendanceRecord[]>(MOCK_ATTENDANCES);
+  const router = useRouter();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Proteksi Halaman Admin: Wajib Login & Wajib Berperan Admin
+  useEffect(() => {
+    if (!isAuthLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (user.role !== 'admin') {
+        router.push('/');
+      }
+    }
+  }, [user, isAuthLoading, router]);
+
+  // Ambil Data Absensi dan Profil Staf dari Supabase
+  useEffect(() => {
+    async function loadAdminData() {
+      if (!user || user.role !== 'admin') return;
+      setIsLoading(true);
+
+      const supabase = createClient();
+      if (!supabase) {
+        setIsLoading(false);
+        return;
+      }
+
+      // 1. Ambil Semua Profil
+      const { data: profilesData } = await supabase.from('profiles').select('*');
+      if (profilesData) {
+        setProfiles(profilesData);
+      }
+
+      // 2. Ambil Semua Absensi
+      const { data: attendancesData } = await supabase
+        .from('attendances')
+        .select('*')
+        .order('check_in_time', { ascending: false });
+
+      if (attendancesData) {
+        // Gabungkan dengan data profil berdasarkan user_id
+        const enriched = attendancesData.map((att: any) => {
+          const matchedUser = profilesData?.find((p) => p.id === att.user_id);
+          return {
+            ...att,
+            user: matchedUser || {
+              full_name: 'Staff Lapangan',
+              job_position: 'Pekerja Proyek',
+            },
+          };
+        });
+        setAttendances(enriched);
+      }
+
+      setIsLoading(false);
+    }
+
+    loadAdminData();
+  }, [user]);
 
   // Filter daftar hadir berdasarkan pencarian nama staf
   const filteredRecords = attendances.filter((item) => {
@@ -74,9 +139,18 @@ export default function AdminDashboardPage() {
     document.body.removeChild(link);
   };
 
+  if (isAuthLoading || !user || user.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+        <p className="text-xs text-slate-400">Memeriksa hak akses admin...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-24">
-      <AppHeader user={currentUser} onSwitchRole={(r) => setCurrentUser(MOCK_USERS.find(u => u.role === r) || MOCK_USERS[1])} />
+      <AppHeader user={user} />
 
       <main className="max-w-4xl mx-auto px-4 pt-4 space-y-4">
         {/* Top Header Admin */}
@@ -95,11 +169,19 @@ export default function AdminDashboardPage() {
 
           <div className="flex items-center gap-2">
             <Link
+              href="/admin/staff"
+              className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform"
+            >
+              <UserCheck className="w-4 h-4 text-slate-500" />
+              <span>Kelola Staff</span>
+            </Link>
+
+            <Link
               href="/admin/site"
               className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform"
             >
               <Settings className="w-4 h-4 text-slate-500" />
-              <span>Setting Site & Radius</span>
+              <span>Setting Site</span>
             </Link>
 
             <button
@@ -119,29 +201,29 @@ export default function AdminDashboardPage() {
               <Users className="w-3.5 h-3.5 text-blue-500" /> Total Staff
             </div>
             <div className="font-mono text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-              {MOCK_USERS.length}
+              {profiles.length}
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">Terdaftar di proyek</div>
           </div>
 
           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Hadir Hari Ini
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Total Hadir
             </div>
             <div className="font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
               {attendances.length}
             </div>
-            <div className="text-[10px] text-emerald-600/80 mt-0.5">100% dalam geofence</div>
+            <div className="text-[10px] text-emerald-600/80 mt-0.5">Semua catatan tersimpan</div>
           </div>
 
           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-amber-500" /> Rata-rata Masuk
+              <Clock className="w-3.5 h-3.5 text-amber-500" /> Status Masuk
             </div>
             <div className="font-mono text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-              07:45
+              Realtime
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">WIB (Tepat Waktu)</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">WIB (Terkonfirmasi Satelit)</div>
           </div>
 
           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -151,7 +233,7 @@ export default function AdminDashboardPage() {
             <div className="font-mono text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
               {DEFAULT_SITE.radius_meters}m
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Toleransi GPS site</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Toleransi site</div>
           </div>
         </div>
 
@@ -180,72 +262,83 @@ export default function AdminDashboardPage() {
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
           <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-              Log Kehadiran Hari Ini ({filteredRecords.length})
+              Log Kehadiran Lapangan ({filteredRecords.length})
             </h3>
-            <span className="text-xs text-slate-400">Update otomatis</span>
+            <span className="text-xs text-slate-400">Sinkronisasi Supabase</span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-800">
-                <tr>
-                  <th className="py-3 px-4">Foto Bukti</th>
-                  <th className="py-3 px-4">Nama Staff</th>
-                  <th className="py-3 px-4">Jabatan</th>
-                  <th className="py-3 px-4">Jam Masuk</th>
-                  <th className="py-3 px-4">Jarak dari Site</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Catatan</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredRecords.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="py-2.5 px-4">
-                      <button
-                        onClick={() => setSelectedPhoto(item.check_in_photo_url)}
-                        className="w-10 h-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 relative group shrink-0"
-                        title="Klik untuk zoom foto bukti"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={item.check_in_photo_url}
-                          alt={item.user?.full_name}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                        />
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Eye className="w-3.5 h-3.5 text-white" />
-                        </div>
-                      </button>
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold text-slate-900 dark:text-white">
-                      {item.user?.full_name}
-                    </td>
-                    <td className="py-2.5 px-4 text-slate-500 dark:text-slate-400">
-                      {item.user?.job_position}
-                    </td>
-                    <td className="py-2.5 px-4 font-mono font-medium text-slate-700 dark:text-slate-300">
-                      {formatTimeID(item.check_in_time)} WIB
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <div className="flex items-center gap-1.5 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                        <MapPin className="w-3 h-3" />
-                        <span>{Math.round(item.check_in_distance_meters)}m</span>
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
-                        Hadir
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-4 text-slate-500 max-w-[180px] truncate">
-                      {item.notes || '-'}
-                    </td>
+          {isLoading ? (
+            <div className="p-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+              <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+              <span className="text-xs">Memuat data dari database...</span>
+            </div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="p-10 text-center text-slate-400 text-xs">
+              Belum ada data absensi yang masuk.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Foto Bukti</th>
+                    <th className="py-3 px-4">Nama Staff</th>
+                    <th className="py-3 px-4">Jabatan</th>
+                    <th className="py-3 px-4">Jam Masuk</th>
+                    <th className="py-3 px-4">Jarak dari Site</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Catatan</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredRecords.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-2.5 px-4">
+                        <button
+                          onClick={() => setSelectedPhoto(item.check_in_photo_url)}
+                          className="w-10 h-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 relative group shrink-0"
+                          title="Klik untuk zoom foto bukti"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.check_in_photo_url}
+                            alt={item.user?.full_name}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Eye className="w-3.5 h-3.5 text-white" />
+                          </div>
+                        </button>
+                      </td>
+                      <td className="py-2.5 px-4 font-semibold text-slate-900 dark:text-white">
+                        {item.user?.full_name}
+                      </td>
+                      <td className="py-2.5 px-4 text-slate-500 dark:text-slate-400">
+                        {item.user?.job_position}
+                      </td>
+                      <td className="py-2.5 px-4 font-mono font-medium text-slate-700 dark:text-slate-300">
+                        {formatTimeID(item.check_in_time)} WIB
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-1.5 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                          <MapPin className="w-3 h-3" />
+                          <span>{Math.round(item.check_in_distance_meters)}m</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                          Hadir
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4 text-slate-500 max-w-[180px] truncate">
+                        {item.notes || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </main>
 
@@ -275,7 +368,7 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      <BottomNav userRole={currentUser.role} />
+      <BottomNav userRole={user.role} />
     </div>
   );
 }

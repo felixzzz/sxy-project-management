@@ -1,16 +1,21 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { BottomNav } from '@/components/navigation/BottomNav';
-import { MOCK_USERS } from '@/lib/mock-data';
 import { UserProfile } from '@/types/attendance';
-import { ArrowLeft, UserPlus, Shield, User, HardHat, Phone, Mail, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, UserPlus, Shield, User, HardHat, Phone, Mail, CheckCircle2, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 
 export default function AdminStaffPage() {
-  const [currentUser] = useState<UserProfile>(MOCK_USERS[1]);
-  const [staffList, setStaffList] = useState<UserProfile[]>(MOCK_USERS);
+  const router = useRouter();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  const [staffList, setStaffList] = useState<UserProfile[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
 
   const [newFullName, setNewFullName] = useState<string>('');
@@ -19,20 +24,59 @@ export default function AdminStaffPage() {
   const [newJob, setNewJob] = useState<string>('');
   const [newPhone, setNewPhone] = useState<string>('');
 
-  const handleAddStaff = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!isAuthLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (user.role !== 'admin') {
+        router.push('/');
+      }
+    }
+  }, [user, isAuthLoading, router]);
+
+  const loadStaff = async () => {
+    setIsLoading(true);
+    const supabase = createClient();
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
+
+    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setStaffList(data);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    if (user && user.role === 'admin') {
+      loadStaff();
+    }
+  }, [user]);
+
+  const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
+    const supabase = createClient();
+    if (!supabase) return;
+
+    // Gunakan crypto.randomUUID()
+    const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-0000-0000-' + Date.now().toString().slice(-12);
+
     const newUser: UserProfile = {
-      id: `user-${Date.now()}`,
+      id: newId,
       full_name: newFullName,
       email: newEmail,
       role: newRole,
-      job_position: newJob || 'Staff Proyek',
+      job_position: newJob || (newRole === 'admin' ? 'Project Director' : 'Staff Proyek'),
       phone_number: newPhone,
       is_active: true,
       created_at: new Date().toISOString(),
     };
 
-    setStaffList([...staffList, newUser]);
+    await supabase.from('profiles').insert(newUser);
+    await loadStaff();
+
     setShowAddModal(false);
     setNewFullName('');
     setNewEmail('');
@@ -40,9 +84,18 @@ export default function AdminStaffPage() {
     setNewPhone('');
   };
 
+  if (isAuthLoading || !user || user.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+        <p className="text-xs text-slate-400">Memeriksa hak akses...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-24">
-      <AppHeader user={currentUser} />
+      <AppHeader user={user} />
 
       <main className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
         {/* Header Navigation */}
@@ -59,7 +112,7 @@ export default function AdminStaffPage() {
                 Kelola Data Staff & Mandor
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Total: {staffList.length} orang terdaftar di proyek
+                Total: {staffList.length} akun terdaftar di Supabase
               </p>
             </div>
           </div>
@@ -74,70 +127,84 @@ export default function AdminStaffPage() {
         </div>
 
         {/* List Staf */}
-        <div className="space-y-2.5">
-          {staffList.map((user) => (
-            <div
-              key={user.id}
-              className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                    user.role === 'admin'
-                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
-                      : user.role === 'mandor'
-                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                  }`}
-                >
-                  {user.role === 'admin' && <Shield className="w-5 h-5" />}
-                  {user.role === 'mandor' && <HardHat className="w-5 h-5" />}
-                  {user.role === 'staff' && <User className="w-5 h-5" />}
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-semibold text-xs text-slate-900 dark:text-white truncate">
-                      {user.full_name}
-                    </h4>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider ${
-                        user.role === 'admin'
-                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300'
-                          : user.role === 'mandor'
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300'
-                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                      }`}
-                    >
-                      {user.role}
-                    </span>
+        {isLoading ? (
+          <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+            <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+            <span className="text-xs">Memuat daftar staf...</span>
+          </div>
+        ) : staffList.length === 0 ? (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-slate-200 dark:border-slate-800 text-center">
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Belum ada staff terdaftar</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Gunakan tombol &quot;Tambah Staff&quot; di atas untuk mendaftarkan akun pekerja proyek.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {staffList.map((item) => (
+              <div
+                key={item.id}
+                className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                      item.role === 'admin'
+                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+                        : item.role === 'mandor'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                    }`}
+                  >
+                    {item.role === 'admin' && <Shield className="w-5 h-5" />}
+                    {item.role === 'mandor' && <HardHat className="w-5 h-5" />}
+                    {item.role === 'staff' && <User className="w-5 h-5" />}
                   </div>
 
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {user.job_position}
-                  </p>
-
-                  <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Mail className="w-3 h-3" /> {user.email}
-                    </span>
-                    {user.phone_number && (
-                      <span className="flex items-center gap-1 font-mono">
-                        <Phone className="w-3 h-3" /> {user.phone_number}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold text-xs text-slate-900 dark:text-white truncate">
+                        {item.full_name}
+                      </h4>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider ${
+                          item.role === 'admin'
+                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300'
+                            : item.role === 'mandor'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300'
+                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                        }`}
+                      >
+                        {item.role}
                       </span>
-                    )}
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      {item.job_position}
+                    </p>
+
+                    <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Mail className="w-3 h-3" /> {item.email}
+                      </span>
+                      {item.phone_number && (
+                        <span className="flex items-center gap-1 font-mono">
+                          <Phone className="w-3 h-3" /> {item.phone_number}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="shrink-0 flex items-center">
-                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-full">
-                  <CheckCircle2 className="w-3 h-3" /> Aktif
-                </span>
+                <div className="shrink-0 flex items-center">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-full">
+                    <CheckCircle2 className="w-3 h-3" /> Aktif
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Modal Tambah Staff */}
         {showAddModal && (
@@ -240,7 +307,7 @@ export default function AdminStaffPage() {
         )}
       </main>
 
-      <BottomNav userRole={currentUser.role} />
+      <BottomNav userRole={user.role} />
     </div>
   );
 }

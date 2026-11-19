@@ -2,15 +2,17 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { HardHat, ShieldCheck, User } from 'lucide-react';
+import { HardHat, ShieldCheck, User, LogOut } from 'lucide-react';
 import { UserProfile } from '@/types/attendance';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AppHeaderProps {
   user: UserProfile;
-  onSwitchRole?: (newRole: 'staff' | 'admin') => void;
 }
 
-export function AppHeader({ user, onSwitchRole }: AppHeaderProps) {
+export function AppHeader({ user }: AppHeaderProps) {
+  const { logout } = useAuth();
+
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3">
       <div className="max-w-md mx-auto flex items-center justify-between">
@@ -29,20 +31,9 @@ export function AppHeader({ user, onSwitchRole }: AppHeaderProps) {
           </div>
         </Link>
 
-        {/* User Profile Pill & Quick Role Switch */}
-        <div className="flex items-center gap-2">
-          {onSwitchRole && (
-            <button
-              type="button"
-              onClick={() => onSwitchRole(user.role === 'admin' ? 'staff' : 'admin')}
-              className="text-[10px] px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono font-medium hover:bg-slate-200"
-              title="Ganti persona simulasi"
-            >
-              Mode: <span className="font-bold text-blue-600 dark:text-blue-400 uppercase">{user.role}</span>
-            </button>
-          )}
-
-          <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-200 dark:border-slate-700">
+        {/* User Info & Logout Button */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5">
             <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300">
               {user.role === 'admin' ? (
                 <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -50,11 +41,25 @@ export function AppHeader({ user, onSwitchRole }: AppHeaderProps) {
                 <User className="w-4 h-4" />
               )}
             </div>
-            <div className="hidden sm:block text-right">
-              <div className="text-xs font-semibold leading-tight">{user.full_name.split(' ')[0]}</div>
-              <div className="text-[10px] text-slate-400 capitalize">{user.role}</div>
+            <div className="text-right">
+              <div className="text-xs font-semibold leading-tight text-slate-900 dark:text-white">
+                {user.full_name?.split(' ')[0] || 'Staff'}
+              </div>
+              <div className="text-[9px] text-slate-400 uppercase font-mono font-medium tracking-wider">
+                {user.role}
+              </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={logout}
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
+            title="Keluar / Logout"
+            aria-label="Logout"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
     </header>
