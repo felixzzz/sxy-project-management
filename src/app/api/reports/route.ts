@@ -367,3 +367,237 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+// Helper untuk validasi hak akses Administrator
+async function verifyIsAdmin(supabase: any, adminUserId?: string): Promise<boolean> {
+  if (!adminUserId) return false;
+  try {
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('role, email')
+      .eq('id', adminUserId)
+      .maybeSingle();
+
+    if (!userProfile) {
+      return adminUserId === '806766ca-08a8-425c-9c0a-0e022a38dffd';
+    }
+
+    return (
+      userProfile.role === 'admin' ||
+      userProfile.email?.toLowerCase() === 'felix@salim.bz'
+    );
+  } catch {
+    return false;
+  }
+}
+
+// PATCH / PUT: Edit laporan harian & backdate tanggal (Hanya oleh Administrator)
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const {
+      id,
+      adminUserId,
+      reportDate,
+      workDayName,
+      workHours,
+      contractorName,
+      zoneName,
+      workCategory,
+      workCompleted,
+      workPlannedTomorrow,
+      obstacles,
+      weatherCondition,
+      weatherTimeline,
+      staffTotal,
+      manpowerTotal,
+      totalWorkers,
+      staffBreakdown,
+      manpowerBreakdown,
+    } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID laporan wajib disertakan.' }, { status: 400 });
+    }
+
+    if (isSupabaseConfigured()) {
+      const supabase = await createServerSupabaseClient();
+      if (supabase) {
+        // Verifikasi hak akses admin
+        const isAdmin = await verifyIsAdmin(supabase, adminUserId);
+        if (!isAdmin) {
+          return NextResponse.json(
+            { error: 'Akses Ditolak: Hanya Administrator yang berwenang mengedit atau mengubah tanggal laporan.' },
+            { status: 403 }
+          );
+        }
+
+        const updates: Record<string, any> = {
+          updated_at: new Date().toISOString(),
+        };
+
+        if (reportDate !== undefined) updates.report_date = reportDate;
+        if (workDayName !== undefined) updates.work_day_name = workDayName;
+        if (workHours !== undefined) updates.work_hours = workHours;
+        if (contractorName !== undefined) updates.contractor_name = contractorName;
+        if (zoneName !== undefined) updates.zone_name = zoneName;
+        if (workCategory !== undefined) updates.work_category = workCategory;
+        if (workCompleted !== undefined) updates.work_completed = workCompleted;
+        if (workPlannedTomorrow !== undefined) updates.work_planned_tomorrow = workPlannedTomorrow || null;
+        if (obstacles !== undefined) updates.obstacles = obstacles || null;
+        if (weatherCondition !== undefined) updates.weather_condition = weatherCondition;
+        if (weatherTimeline !== undefined) updates.weather_timeline = weatherTimeline;
+        if (staffTotal !== undefined) updates.staff_total = Number(staffTotal);
+        if (manpowerTotal !== undefined) {
+          updates.manpower_total = Number(manpowerTotal);
+          updates.worker_headcount = Number(manpowerTotal);
+        }
+        if (totalWorkers !== undefined) updates.total_workers = Number(totalWorkers);
+        if (staffBreakdown !== undefined) updates.staff_breakdown = staffBreakdown;
+        if (manpowerBreakdown !== undefined) updates.manpower_breakdown = manpowerBreakdown;
+
+        let { data, error } = await supabase
+          .from('daily_site_reports')
+          .update(updates)
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        // Jika kolom updated_at belum ada di tabel Postgres / schema cache, retry tanpa updated_at
+        if (
+          error &&
+          (error.code === '42703' ||
+            error.code === 'PGRST204' ||
+            error.message?.toLowerCase().includes('updated_at'))
+        ) {
+          delete updates.updated_at;
+          const retryRes = await supabase
+            .from('daily_site_reports')
+            .update(updates)
+            .eq('id', id)
+            .select('*')
+            .single();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+
+        if (error) {
+          console.error('Update daily_site_reports error:', error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        if (data) {
+          // Ambil profil reporter
+          const { data: userProf } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.reporter_id)
+            .maybeSingle();
+
+          const enriched = {
+            ...data,
+            reporter: userProf || {
+              id: data.reporter_id,
+              full_name: 'Staff Lapangan',
+              role: 'staff',
+            },
+            site: DEFAULT_SITE,
+            updated_at: data.updated_at || new Date().toISOString(),
+          };
+
+          return NextResponse.json({
+            success: true,
+            message: 'Laporan harian berhasil diperbarui oleh Administrator.',
+            data: enriched,
+          });
+        }
+      }
+    }
+
+    // Fallback Update Mock Data
+    const mockIdx = MOCK_DAILY_REPORTS.findIndex((r) => r.id === id);
+    if (mockIdx >= 0) {
+      MOCK_DAILY_REPORTS[mockIdx] = {
+        ...MOCK_DAILY_REPORTS[mockIdx],
+        ...(reportDate && { report_date: reportDate }),
+        ...(workDayName && { work_day_name: workDayName }),
+        ...(zoneName && { zone_name: zoneName }),
+        ...(workCategory && { work_category: workCategory }),
+        ...(workCompleted && { work_completed: workCompleted }),
+        ...(workPlannedTomorrow !== undefined && { work_planned_tomorrow: workPlannedTomorrow }),
+        ...(obstacles !== undefined && { obstacles: obstacles }),
+        ...(weatherCondition && { weather_condition: weatherCondition }),
+        ...(weatherTimeline && { weather_timeline: weatherTimeline }),
+        ...(staffTotal !== undefined && { staff_total: Number(staffTotal) }),
+        ...(manpowerTotal !== undefined && { manpower_total: Number(manpowerTotal), worker_headcount: Number(manpowerTotal) }),
+        ...(totalWorkers !== undefined && { total_workers: Number(totalWorkers) }),
+        updated_at: new Date().toISOString(),
+      };
+      return NextResponse.json({
+        success: true,
+        message: 'Laporan harian (mock) berhasil diperbarui.',
+        data: MOCK_DAILY_REPORTS[mockIdx],
+      });
+    }
+
+    return NextResponse.json({ error: 'Laporan tidak ditemukan.' }, { status: 404 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Gagal memperbarui laporan';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export const PUT = PATCH;
+
+// DELETE: Hapus laporan (Hanya oleh Administrator)
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    let id = searchParams.get('id');
+    let adminUserId = searchParams.get('adminUserId');
+
+    if (!id) {
+      try {
+        const body = await req.json();
+        id = body?.id;
+        adminUserId = body?.adminUserId || adminUserId;
+      } catch {
+        // body mungkin kosong jika via query param
+      }
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID laporan wajib disertakan.' }, { status: 400 });
+    }
+
+    if (isSupabaseConfigured()) {
+      const supabase = await createServerSupabaseClient();
+      if (supabase) {
+        const isAdmin = await verifyIsAdmin(supabase, adminUserId || undefined);
+        if (!isAdmin) {
+          return NextResponse.json(
+            { error: 'Akses Ditolak: Hanya Administrator yang berwenang menghapus laporan.' },
+            { status: 403 }
+          );
+        }
+
+        const { error } = await supabase.from('daily_site_reports').delete().eq('id', id);
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({ success: true, message: 'Laporan berhasil dihapus.' });
+      }
+    }
+
+    // Mock delete fallback
+    const idx = MOCK_DAILY_REPORTS.findIndex((r) => r.id === id);
+    if (idx >= 0) {
+      MOCK_DAILY_REPORTS.splice(idx, 1);
+    }
+    return NextResponse.json({ success: true, message: 'Laporan berhasil dihapus.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Gagal menghapus laporan';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

@@ -40,6 +40,8 @@ import {
   Trash2,
   ImagePlus,
   Edit3,
+  Lock,
+  Save,
 } from 'lucide-react';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
@@ -59,7 +61,7 @@ import {
   WeatherTimelineItem,
 } from '@/types/attendance';
 import { DEFAULT_SITE, DEFAULT_PROJECT_ZONES, MOCK_DAILY_REPORTS } from '@/lib/mock-data';
-import { formatDateID, formatDateTimeID, generateWhatsAppReportText } from '@/lib/utils';
+import { formatDateID, formatDateTimeID, getDayNameID, generateWhatsAppReportText } from '@/lib/utils';
 import { isWithinGeofence } from '@/lib/geo/haversine';
 
 interface WeatherTimelineRow {
@@ -144,6 +146,7 @@ const validateWeatherTimeline = (rows: WeatherTimelineRow[]): WeatherValidationR
 export default function LaporanPage() {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.email?.toLowerCase() === 'felix@salim.bz';
 
   const [activeSubTab, setActiveSubTab] = useState<'create' | 'history'>('create');
   const [site, setSite] = useState<ProjectSite>(DEFAULT_SITE);
@@ -153,8 +156,26 @@ export default function LaporanPage() {
   // Form Header State
   const [contractorName, setContractorName] = useState<string>('PT. BERCA BUANA SAKTI');
   const [workCategory, setWorkCategory] = useState<string>('PEKERJAAN PERSIAPAN');
-  const [workDayName, setWorkDayName] = useState<string>('Selasa');
+  const [reportDate, setReportDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [workDayName, setWorkDayName] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return getDayNameID(`${year}-${month}-${day}`);
+  });
   const [workHours, setWorkHours] = useState<string>('Jam 08.00 sd 17.00 WIB');
+
+  const handleDateChange = (newDate: string) => {
+    setReportDate(newDate);
+    setWorkDayName(getDayNameID(newDate));
+  };
 
   // 1. Zonasi dibuat dalam bentuk Free Text
   const [selectedZone, setSelectedZone] = useState<string>(
@@ -415,6 +436,121 @@ export default function LaporanPage() {
     index: number;
     total: number;
   } | null>(null);
+
+  // Edit & Backdate Modal State (Khusus Administrator)
+  const [editingReport, setEditingReport] = useState<DailySiteReport | null>(null);
+  const [editReportDate, setEditReportDate] = useState<string>('');
+  const [editWorkDayName, setEditWorkDayName] = useState<string>('');
+  const [editWorkCategory, setEditWorkCategory] = useState<string>('');
+  const [editWorkHours, setEditWorkHours] = useState<string>('');
+  const [editZoneName, setEditZoneName] = useState<string>('');
+  const [editWorkCompleted, setEditWorkCompleted] = useState<string>('');
+  const [editWorkPlannedTomorrow, setEditWorkPlannedTomorrow] = useState<string>('');
+  const [editObstacles, setEditObstacles] = useState<string>('');
+  const [editWeatherCondition, setEditWeatherCondition] = useState<WeatherCondition>('sunny');
+  const [editStaffTotal, setEditStaffTotal] = useState<number>(17);
+  const [editManpowerTotal, setEditManpowerTotal] = useState<number>(25);
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState<boolean>(false);
+  const [reportEditError, setReportEditError] = useState<string | null>(null);
+  const [deletingReport, setDeletingReport] = useState<DailySiteReport | null>(null);
+
+  const openEditReportModal = (rep: DailySiteReport) => {
+    setReportEditError(null);
+    setEditingReport(rep);
+    const repDate = rep.report_date || (rep.created_at ? rep.created_at.split('T')[0] : '');
+    setEditReportDate(repDate);
+    setEditWorkDayName(rep.work_day_name || getDayNameID(repDate));
+    setEditWorkCategory(rep.work_category || 'PEKERJAAN PERSIAPAN');
+    setEditWorkHours(rep.work_hours || 'Jam 08.00 sd 17.00 WIB');
+    setEditZoneName(rep.zone_name);
+    setEditWorkCompleted(rep.work_completed);
+    setEditWorkPlannedTomorrow(rep.work_planned_tomorrow || '');
+    setEditObstacles(rep.obstacles || '');
+    setEditWeatherCondition(rep.weather_condition);
+    setEditStaffTotal(rep.staff_total || 17);
+    setEditManpowerTotal(rep.manpower_total || rep.worker_headcount || 25);
+  };
+
+  const handleUpdateReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReport || !user) return;
+    setIsSubmittingEdit(true);
+    setReportEditError(null);
+
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingReport.id,
+          adminUserId: user.id,
+          reportDate: editReportDate,
+          workDayName: editWorkDayName,
+          workHours: editWorkHours,
+          zoneName: editZoneName.trim(),
+          workCategory: editWorkCategory,
+          workCompleted: editWorkCompleted.trim(),
+          workPlannedTomorrow: editWorkPlannedTomorrow.trim(),
+          obstacles: editObstacles.trim(),
+          weatherCondition: editWeatherCondition,
+          staffTotal: editStaffTotal,
+          manpowerTotal: editManpowerTotal,
+          totalWorkers: editStaffTotal + editManpowerTotal,
+        }),
+      });
+
+      const resJson = await res.json();
+      if (!res.ok) throw new Error(resJson.error || 'Gagal mengubah laporan.');
+
+      const updated = resJson.data;
+      setReports((prev) =>
+        prev.map((r) => (r.id === editingReport.id ? { ...r, ...updated } : r))
+      );
+      if (zoomReport && zoomReport.id === editingReport.id) {
+        setZoomReport((prev) => (prev ? { ...prev, ...updated } : null));
+      }
+
+      setEditingReport(null);
+      setSuccessToast(`Laporan tanggal ${editReportDate} berhasil diperbarui!`);
+      setTimeout(() => setSuccessToast(null), 4000);
+    } catch (err: unknown) {
+      setReportEditError(err instanceof Error ? err.message : 'Gagal mengubah laporan.');
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  const handleDeleteReport = async () => {
+    if (!deletingReport || !user) return;
+    setIsSubmittingEdit(true);
+    try {
+      const res = await fetch(
+        `/api/reports?id=${encodeURIComponent(deletingReport.id)}&adminUserId=${encodeURIComponent(user.id)}`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: deletingReport.id, adminUserId: user.id }),
+        }
+      );
+      const resJson = await res.json();
+      if (!res.ok) throw new Error(resJson.error || 'Gagal menghapus laporan.');
+
+      setReports((prev) => prev.filter((r) => r.id !== deletingReport.id));
+      if (zoomReport && zoomReport.id === deletingReport.id) {
+        setZoomReport(null);
+      }
+      if (editingReport && editingReport.id === deletingReport.id) {
+        setEditingReport(null);
+      }
+      setDeletingReport(null);
+      setSuccessToast('Laporan harian berhasil dihapus.');
+      setTimeout(() => setSuccessToast(null), 3000);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Gagal menghapus laporan');
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
 
   // Suggestions for Photo Captions
   const CAPTION_SUGGESTIONS = [
@@ -763,7 +899,7 @@ export default function LaporanPage() {
         body: JSON.stringify({
           reporterId: user.id,
           siteId: site.id,
-          reportDate: new Date().toISOString().split('T')[0],
+          reportDate,
           workDayName,
           workHours,
           contractorName,
@@ -903,6 +1039,68 @@ export default function LaporanPage() {
               <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl text-rose-700 dark:text-rose-400 text-xs flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>{errorMessage}</span>
+              </div>
+            )}
+
+            {/* SELEKSI TANGGAL LAPORAN & BACKDATE (KHUSUS ADMIN) */}
+            {isAdmin ? (
+              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-3.5 rounded-2xl border border-amber-500/30 dark:border-amber-500/25 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    Tanggal Pelaksanaan Pekerjaan
+                  </label>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    Admin: Backdate Aktif
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">
+                      Pilih Tanggal:
+                    </label>
+                    <input
+                      type="date"
+                      value={reportDate}
+                      onChange={(e) => handleDateChange(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-bold rounded-xl border border-amber-500/40 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">
+                      Hari Pelaksanaan:
+                    </label>
+                    <input
+                      type="text"
+                      value={workDayName}
+                      onChange={(e) => setWorkDayName(e.target.value)}
+                      placeholder="Senin / Selasa / dll"
+                      className="w-full px-2.5 py-1.5 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-amber-700 dark:text-amber-400/90 leading-tight">
+                  Laporan akan tercatat sebagai pekerjaan tanggal <strong>{formatDateID(reportDate)}</strong>. Waktu input asli tetap tersimpan otomatis di riwayat sistem.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Calendar className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Hari {workDayName}, {formatDateID(reportDate)}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Tanggal Hari Ini (Otomatis)
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center gap-1 border border-slate-200 dark:border-slate-700">
+                  <Lock className="w-2.5 h-2.5" />
+                  Staff
+                </span>
               </div>
             )}
 
@@ -1740,14 +1938,34 @@ export default function LaporanPage() {
                           <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                             {rep.work_hours || '08.00 - 17.00 WIB'}
                           </span>
+                          {rep.updated_at && rep.updated_at !== rep.created_at && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-500/30 flex items-center gap-1">
+                              <Edit3 className="w-2.5 h-2.5" />
+                              Diedit
+                            </span>
+                          )}
                         </div>
                         <h4 className="text-xs font-bold text-slate-900 dark:text-white mt-1">
                           {rep.contractor_name || 'PT. BERCA BUANA SAKTI'}
                         </h4>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                          Zona: <span className="font-semibold text-slate-800 dark:text-slate-200">{rep.zone_name}</span> • Pelapor:{' '}
-                          {rep.reporter?.full_name || 'Staff Lapangan'} • {formatDateID(rep.report_date)}
-                        </p>
+                        <div className="mt-1 space-y-0.5">
+                          <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            Pekerjaan: Hari {rep.work_day_name || getDayNameID(rep.report_date)}, {formatDateID(rep.report_date || rep.created_at)}
+                          </p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                            Zona: <span className="font-semibold text-slate-800 dark:text-slate-200">{rep.zone_name}</span> • Pelapor:{' '}
+                            {rep.reporter?.full_name || 'Staff Lapangan'}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-mono pt-0.5">
+                            <span>Input: {formatDateTimeID(rep.created_at)}</span>
+                            {rep.updated_at && rep.updated_at !== rep.created_at && (
+                              <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                • Update: {formatDateTimeID(rep.updated_at)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="text-right shrink-0">
@@ -1849,8 +2067,19 @@ export default function LaporanPage() {
                       </div>
                     )}
 
-                    {/* Action WhatsApp Buttons */}
+                    {/* Action WhatsApp & Edit Buttons */}
                     <div className="pt-2 flex items-center gap-2">
+                      {isAdmin && (
+                        <button
+                          onClick={() => openEditReportModal(rep)}
+                          className="py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          title="Edit Laporan & Tanggal Backdate"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => handleCopyWhatsApp(rep)}
                         className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -2062,7 +2291,21 @@ export default function LaporanPage() {
                   </span>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 flex gap-2">
+                <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        const target = zoomReport;
+                        setZoomReport(null);
+                        openEditReportModal(target);
+                      }}
+                      className="py-2 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl flex items-center justify-center gap-1.5 text-xs cursor-pointer shadow-xs"
+                      title="Edit Laporan & Backdate"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleCopyWhatsApp(zoomReport)}
                     className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 text-xs cursor-pointer"
@@ -2081,6 +2324,268 @@ export default function LaporanPage() {
             </div>
           );
         })()
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL EDIT LAPORAN & BACKDATE TANGGAL (KHUSUS ADMIN) */}
+      {/* ============================================================ */}
+      {editingReport && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-amber-500/30 rounded-2xl max-w-lg w-full p-4 sm:p-6 shadow-2xl space-y-4 my-auto max-h-[92vh] overflow-y-auto text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Edit Laporan & Backdate</h3>
+                  <p className="text-[10px] text-slate-400">
+                    ID: {editingReport.id.substring(0, 8)}... • Pelapor: {editingReport.reporter?.full_name || 'Staff'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingReport(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {reportEditError && (
+              <div className="p-3 bg-rose-950/50 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{reportEditError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateReport} className="space-y-3.5">
+              {/* Backdate Tanggal Laporan & Hari */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-amber-400 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Tanggal Pelaksanaan (Backdate)
+                  </label>
+                  <span className="text-[10px] text-amber-300 font-mono">
+                    Hari: {editWorkDayName || 'Pilih Hari'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Tanggal:</label>
+                    <input
+                      type="date"
+                      required
+                      value={editReportDate}
+                      onChange={(e) => {
+                        setEditReportDate(e.target.value);
+                        setEditWorkDayName(getDayNameID(e.target.value));
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-amber-500/40 text-white font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Nama Hari:</label>
+                    <input
+                      type="text"
+                      required
+                      value={editWorkDayName}
+                      onChange={(e) => setEditWorkDayName(e.target.value)}
+                      placeholder="Senin, Selasa, dll"
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:outline-none focus:ring-1 focus:ring-amber-500 text-xs"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-amber-300/80 leading-tight">
+                  Laporan akan tercatat untuk tanggal pelaksanaan di atas. Riwayat update waktu asli tetap tersimpan.
+                </p>
+              </div>
+
+              {/* Zona & Waktu Kerja */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Zona / Lokasi</label>
+                  <input
+                    type="text"
+                    required
+                    value={editZoneName}
+                    onChange={(e) => setEditZoneName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Waktu Kerja</label>
+                  <input
+                    type="text"
+                    value={editWorkHours}
+                    onChange={(e) => setEditWorkHours(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Kategori Pekerjaan */}
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Kategori Pekerjaan</label>
+                <input
+                  type="text"
+                  required
+                  value={editWorkCategory}
+                  onChange={(e) => setEditWorkCategory(e.target.value.toUpperCase())}
+                  className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 text-xs uppercase"
+                />
+              </div>
+
+              {/* Uraian Pekerjaan Selesai */}
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">
+                  Uraian Pekerjaan Selesai <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={editWorkCompleted}
+                  onChange={(e) => setEditWorkCompleted(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-amber-500/40 resize-none text-xs"
+                />
+              </div>
+
+              {/* Rencana Besok & Kendala */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Rencana Besok</label>
+                  <textarea
+                    rows={2}
+                    value={editWorkPlannedTomorrow}
+                    onChange={(e) => setEditWorkPlannedTomorrow(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 resize-none text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Kendala Lapangan</label>
+                  <textarea
+                    rows={2}
+                    value={editObstacles}
+                    onChange={(e) => setEditObstacles(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 resize-none text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Cuaca & Jumlah SDM */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Cuaca</label>
+                  <select
+                    value={editWeatherCondition}
+                    onChange={(e) => setEditWeatherCondition(e.target.value as WeatherCondition)}
+                    className="w-full px-2 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 text-xs"
+                  >
+                    <option value="sunny">☀️ Cerah</option>
+                    <option value="cloudy">⛅ Mendung</option>
+                    <option value="rainy">🌧️ Hujan</option>
+                    <option value="heavy_rain">⛈️ Hujan Lebat</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Staff BBS</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editStaffTotal}
+                    onChange={(e) => setEditStaffTotal(Number(e.target.value))}
+                    className="w-full px-2 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 font-mono text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Manpower</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editManpowerTotal}
+                    onChange={(e) => setEditManpowerTotal(Number(e.target.value))}
+                    className="w-full px-2 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40 font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Tombol Aksi */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = editingReport;
+                    setEditingReport(null);
+                    setDeletingReport(target);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 flex items-center gap-1 cursor-pointer transition-colors text-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Laporan</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingReport(null)}
+                    className="px-3 py-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer text-xs"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingEdit}
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50 text-xs"
+                  >
+                    {isSubmittingEdit ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    )}
+                    <span>Simpan Perubahan</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL KONFIRMASI HAPUS LAPORAN (ADMIN ONLY) */}
+      {/* ============================================================ */}
+      {deletingReport && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/30 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+            <div className="w-11 h-11 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto border border-rose-500/20">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div className="text-center">
+              <h3 className="font-bold text-sm text-white">Hapus Laporan Proyek?</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Anda yakin ingin menghapus laporan <strong className="text-white">{deletingReport.zone_name}</strong> tanggal <strong className="text-white">{formatDateID(deletingReport.report_date || deletingReport.created_at)}</strong>? Aksi ini permanen.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                onClick={() => setDeletingReport(null)}
+                className="px-3.5 py-1.5 rounded-xl text-xs text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDeleteReport}
+                disabled={isSubmittingEdit}
+                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-rose-950/40 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>Ya, Hapus</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <BottomNav userRole={user.role} />

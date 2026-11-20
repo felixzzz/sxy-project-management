@@ -154,10 +154,7 @@ ON CONFLICT (id) DO UPDATE SET
 -- SEED DATA PROFIL STAFF & ADMIN AWAL
 INSERT INTO public.profiles (id, email, full_name, role, job_position)
 VALUES 
-  ('00000000-0000-0000-0000-000000000001', 'budi.santoso@guangming.sch.id', 'Budi Santoso', 'staff', 'Pengawas Struktur & Sipil'),
-  ('00000000-0000-0000-0000-000000000002', 'admin.proyek@guangming.sch.id', 'Hendra Wijaya', 'admin', 'Project Director'),
-  ('00000000-0000-0000-0000-000000000003', 'mandor.ahmad@guangming.sch.id', 'Ahmad Fauzi', 'mandor', 'Mandor Besi & Bekisting'),
-  ('00000000-0000-0000-0000-000000000004', 'siti.nurhaliza@guangming.sch.id', 'Siti Rahmawati', 'staff', 'Quality Control (QC)')
+  ('00000000-0000-0000-0000-000000000001', 'budi.santoso@guangming.sch.id', 'Budi Santoso', 'staff', 'Pengawas Struktur & Sipil')
 ON CONFLICT (id) DO NOTHING;
 
 -- 6. STORAGE BUCKET UNTUK FOTO SELFIE ABSENSI
@@ -277,10 +274,12 @@ CREATE TABLE IF NOT EXISTS public.daily_site_reports (
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
     photo_url TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Kolom tambahan idempotent untuk table yang sudah terlanjur dibuat
+ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS work_day_name TEXT DEFAULT 'Selasa';
 ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS work_hours TEXT DEFAULT 'Jam 08.00 sd 17.00 WIB';
 ALTER TABLE public.daily_site_reports ADD COLUMN IF NOT EXISTS contractor_name TEXT DEFAULT 'PT. BERCA BUANA SAKTI';

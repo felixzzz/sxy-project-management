@@ -52,6 +52,16 @@ export function formatDateID(isoString: string): string {
   }
 }
 
+export function getDayNameID(dateStr: string): string {
+  try {
+    const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`);
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    return days[d.getDay()] || 'Senin';
+  } catch {
+    return 'Senin';
+  }
+}
+
 export function generateWhatsAppReportText(report: any): string {
   const dayName = report.work_day_name || 'Selasa';
   const workHours = report.work_hours || 'Jam 08.00 sd 17.00 WIB';

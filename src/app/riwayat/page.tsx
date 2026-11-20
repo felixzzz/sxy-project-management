@@ -15,7 +15,12 @@ export default function RiwayatPage() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<{
+    url: string;
+    title: string;
+    subtitle?: string;
+    time?: string;
+  } | string | null>(null);
 
   useEffect(() => {
     if (!isAuthLoading && !user) {
@@ -111,23 +116,76 @@ export default function RiwayatPage() {
                     </div>
                   </div>
 
-                  {/* Thumbnail Foto Selfie yang bisa diklik */}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPhoto(item.check_in_photo_url)}
-                    className="relative group rounded-lg overflow-hidden border border-amber-500/30 dark:border-amber-500/20 w-12 h-14 shrink-0 cursor-pointer"
-                    title="Lihat Foto Bukti"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.check_in_photo_url}
-                      alt="Foto Absen"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                    <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent flex items-end p-0.5">
-                      <span className="text-[8px] text-white bg-black/60 px-1 rounded">Foto</span>
-                    </div>
-                  </button>
+                  {/* Thumbnail Foto Selfie Masuk & Pulang */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedPhoto({
+                          url: item.check_in_photo_url,
+                          title: 'Foto Selfie Masuk (Clock In)',
+                          time: `${formatTimeID(item.check_in_time)} WIB`,
+                          subtitle: `Presensi Masuk • Jarak: ${Math.round(item.check_in_distance_meters)}m`,
+                        })
+                      }
+                      className="relative group rounded-lg overflow-hidden border border-emerald-500/40 w-11 h-14 shrink-0 cursor-pointer shadow-xs"
+                      title="Lihat Foto Masuk (Clock In)"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.check_in_photo_url}
+                        alt="Foto Absen Masuk"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/25 group-hover:bg-transparent flex items-end justify-center p-0.5">
+                        <span className="text-[7px] text-emerald-300 bg-emerald-950/90 px-1 py-0.2 rounded font-extrabold">
+                          IN
+                        </span>
+                      </div>
+                    </button>
+
+                    {item.check_out_photo_url ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedPhoto({
+                            url: item.check_out_photo_url!,
+                            title: 'Foto Selfie Pulang (Clock Out)',
+                            time: item.check_out_time
+                              ? `${formatTimeID(item.check_out_time)} WIB`
+                              : undefined,
+                            subtitle: `Presensi Pulang • Jarak: ${
+                              item.check_out_distance_meters
+                                ? Math.round(item.check_out_distance_meters)
+                                : 0
+                            }m`,
+                          })
+                        }
+                        className="relative group rounded-lg overflow-hidden border border-amber-500/40 w-11 h-14 shrink-0 cursor-pointer shadow-xs"
+                        title="Lihat Foto Pulang (Clock Out)"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={item.check_out_photo_url}
+                          alt="Foto Absen Pulang"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="absolute inset-0 bg-black/25 group-hover:bg-transparent flex items-end justify-center p-0.5">
+                          <span className="text-[7px] text-amber-300 bg-amber-950/90 px-1 py-0.2 rounded font-extrabold">
+                            OUT
+                          </span>
+                        </div>
+                      </button>
+                    ) : (
+                      <div
+                        className="w-11 h-14 rounded-lg border border-dashed border-slate-300 dark:border-slate-700/80 flex flex-col items-center justify-center text-[7px] text-slate-400 shrink-0 bg-slate-50 dark:bg-slate-800/40"
+                        title="Belum Absen Pulang (Clock Out)"
+                      >
+                        <span className="font-bold text-slate-500 dark:text-slate-400">OUT</span>
+                        <span className="text-[7px] text-slate-400">Belum</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Detail Waktu & Jarak */}
@@ -183,14 +241,23 @@ export default function RiwayatPage() {
           <div className="max-w-sm w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-amber-500/30">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={selectedPhoto}
+              src={typeof selectedPhoto === 'string' ? selectedPhoto : selectedPhoto.url}
               alt="Foto Absensi Lengkap"
               className="w-full max-h-[70vh] object-contain bg-black"
             />
-            <div className="p-4 bg-slate-900 text-white text-xs">
-              <p className="font-semibold text-amber-400">Bukti Foto Absensi Lapangan • Yayasan Guang Ji</p>
-              <p className="text-slate-400 text-[11px] mt-1">
-                Foto terverifikasi dengan koordinat GPS dan cap waktu satelit.
+            <div className="p-4 bg-slate-900 text-white text-xs space-y-1">
+              <p className="font-semibold text-amber-400">
+                {typeof selectedPhoto === 'object' && selectedPhoto.title
+                  ? selectedPhoto.title
+                  : 'Bukti Foto Absensi Lapangan • Yayasan Guang Ji'}
+              </p>
+              {typeof selectedPhoto === 'object' && selectedPhoto.time && (
+                <p className="text-white font-mono font-bold text-xs">{selectedPhoto.time}</p>
+              )}
+              <p className="text-slate-400 text-[11px]">
+                {typeof selectedPhoto === 'object' && selectedPhoto.subtitle
+                  ? selectedPhoto.subtitle
+                  : 'Foto terverifikasi dengan koordinat GPS dan cap waktu satelit.'}
               </p>
             </div>
           </div>

@@ -10,6 +10,7 @@ export interface UserProfile {
   avatar_url?: string;
   is_active: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ProjectSite {
@@ -61,6 +62,7 @@ export interface AttendanceRecord {
   is_within_geofence: boolean;
   notes?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export type GeolocationStatus = 
@@ -175,5 +177,6 @@ export interface DailySiteReport {
   photos?: ReportPhotoItem[]; // Multiple progress photos with captions
   documentation_photos?: ReportPhotoItem[]; // Alias for Supabase column
   created_at: string;
+  updated_at?: string;
 }
 

@@ -198,18 +198,28 @@ export async function POST(req: NextRequest) {
       }
 
     // 5. Fallback Mock Response (Saat user belum memasukkan API keys Supabase di .env.local)
+    const isCheckout = action === 'check_out';
     const newRecord = {
       id: `att-${Date.now()}`,
       user_id: userId,
       user: MOCK_USERS.find((u) => u.id === userId) || MOCK_USERS[0],
       site_id: site.id,
       site: site,
-      check_in_time: new Date().toISOString(),
+      check_in_time: isCheckout
+        ? new Date(Date.now() - 8 * 3600000).toISOString()
+        : new Date().toISOString(),
       check_in_lat: latitude,
       check_in_lng: longitude,
       check_in_accuracy: accuracy,
       check_in_distance_meters: verifiedDistanceMeters,
-      check_in_photo_url: photoBase64,
+      check_in_photo_url: isCheckout
+        ? 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?w=500&auto=format&fit=crop&q=80'
+        : photoBase64,
+      check_out_time: isCheckout ? new Date().toISOString() : undefined,
+      check_out_lat: isCheckout ? latitude : undefined,
+      check_out_lng: isCheckout ? longitude : undefined,
+      check_out_distance_meters: isCheckout ? verifiedDistanceMeters : undefined,
+      check_out_photo_url: isCheckout ? photoBase64 : undefined,
       status: 'present',
       is_within_geofence: true,
       notes,

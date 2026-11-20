@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DEFAULT_SITE, MOCK_USERS, MOCK_DAILY_REPORTS } from '@/lib/mock-data';
 import { AttendanceRecord, UserProfile, ProjectSite, UserRole, DailySiteReport, WeatherCondition } from '@/types/attendance';
-import { formatTimeID, formatDateID, formatDateTimeID, generateWhatsAppReportText } from '@/lib/utils';
+import { formatTimeID, formatDateID, formatDateTimeID, generateWhatsAppReportText, getDayNameID } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { DynamicSiteMap } from '@/components/map/DynamicSiteMap';
@@ -108,7 +108,13 @@ function AdminDashboardInner() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late'>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7days'>('all');
-  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<{
+    url: string;
+    title: string;
+    subtitle?: string;
+    time?: string;
+    staffName?: string;
+  } | string | null>(null);
 
   // Reports Module State
   const [reportSubTab, setReportSubTab] = useState<'daily' | 'monthly' | 'staff'>('daily');
@@ -137,6 +143,22 @@ function AdminDashboardInner() {
   const [deletingStaff, setDeletingStaff] = useState<UserProfile | null>(null);
   const [staffModalError, setStaffModalError] = useState<string | null>(null);
   const [isSubmittingStaff, setIsSubmittingStaff] = useState<boolean>(false);
+
+  // Report Edit & Backdate Modal States (Admin Only)
+  const [editingReport, setEditingReport] = useState<DailySiteReport | null>(null);
+  const [editReportDate, setEditReportDate] = useState<string>('');
+  const [editWorkDayName, setEditWorkDayName] = useState<string>('');
+  const [editZoneName, setEditZoneName] = useState<string>('');
+  const [editWorkCategory, setEditWorkCategory] = useState<string>('');
+  const [editWorkCompleted, setEditWorkCompleted] = useState<string>('');
+  const [editWorkPlannedTomorrow, setEditWorkPlannedTomorrow] = useState<string>('');
+  const [editObstacles, setEditObstacles] = useState<string>('');
+  const [editWeatherCondition, setEditWeatherCondition] = useState<WeatherCondition>('sunny');
+  const [editStaffTotal, setEditStaffTotal] = useState<number>(17);
+  const [editManpowerTotal, setEditManpowerTotal] = useState<number>(25);
+  const [isSubmittingReportEdit, setIsSubmittingReportEdit] = useState<boolean>(false);
+  const [reportEditError, setReportEditError] = useState<string | null>(null);
+  const [deletingReport, setDeletingReport] = useState<DailySiteReport | null>(null);
 
   // Form Fields - New Staff
   const [newFullName, setNewFullName] = useState<string>('');
@@ -454,6 +476,95 @@ function AdminDashboardInner() {
     }
   };
 
+  const openEditReportModal = (rep: DailySiteReport) => {
+    setReportEditError(null);
+    setEditingReport(rep);
+    const repDate = rep.report_date || (rep.created_at ? rep.created_at.split('T')[0] : '');
+    setEditReportDate(repDate);
+    setEditWorkDayName(rep.work_day_name || getDayNameID(repDate));
+    setEditZoneName(rep.zone_name);
+    setEditWorkCategory(rep.work_category || 'PEKERJAAN PERSIAPAN');
+    setEditWorkCompleted(rep.work_completed);
+    setEditWorkPlannedTomorrow(rep.work_planned_tomorrow || '');
+    setEditObstacles(rep.obstacles || '');
+    setEditWeatherCondition(rep.weather_condition);
+    setEditStaffTotal(rep.staff_total || 17);
+    setEditManpowerTotal(rep.manpower_total || rep.worker_headcount || 25);
+  };
+
+  const handleUpdateReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReport || !user) return;
+    setIsSubmittingReportEdit(true);
+    setReportEditError(null);
+
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingReport.id,
+          adminUserId: user.id,
+          reportDate: editReportDate,
+          workDayName: editWorkDayName,
+          zoneName: editZoneName.trim(),
+          workCategory: editWorkCategory,
+          workCompleted: editWorkCompleted.trim(),
+          workPlannedTomorrow: editWorkPlannedTomorrow.trim(),
+          obstacles: editObstacles.trim(),
+          weatherCondition: editWeatherCondition,
+          staffTotal: editStaffTotal,
+          manpowerTotal: editManpowerTotal,
+          totalWorkers: editStaffTotal + editManpowerTotal,
+        }),
+      });
+
+      const resJson = await res.json();
+      if (!res.ok) throw new Error(resJson.error || 'Gagal mengubah laporan.');
+
+      const updated = resJson.data;
+      setDailyReports((prev) =>
+        prev.map((r) => (r.id === editingReport.id ? { ...r, ...updated } : r))
+      );
+      if (selectedReportDetail && selectedReportDetail.id === editingReport.id) {
+        setSelectedReportDetail((prev) => (prev ? { ...prev, ...updated } : null));
+      }
+
+      setEditingReport(null);
+      setSaveNotification(`Laporan untuk tanggal ${editReportDate} berhasil diperbarui.`);
+      setTimeout(() => setSaveNotification(null), 4000);
+    } catch (err: unknown) {
+      setReportEditError(err instanceof Error ? err.message : 'Gagal mengubah laporan.');
+    } finally {
+      setIsSubmittingReportEdit(false);
+    }
+  };
+
+  const handleDeleteReport = async () => {
+    if (!deletingReport || !user) return;
+    setIsSubmittingReportEdit(true);
+    try {
+      const res = await fetch(
+        `/api/reports?id=${encodeURIComponent(deletingReport.id)}&adminUserId=${encodeURIComponent(user.id)}`,
+        { method: 'DELETE' }
+      );
+      const resJson = await res.json();
+      if (!res.ok) throw new Error(resJson.error || 'Gagal menghapus laporan.');
+
+      setDailyReports((prev) => prev.filter((r) => r.id !== deletingReport.id));
+      if (selectedReportDetail && selectedReportDetail.id === deletingReport.id) {
+        setSelectedReportDetail(null);
+      }
+      setDeletingReport(null);
+      setSaveNotification('Laporan proyek berhasil dihapus.');
+      setTimeout(() => setSaveNotification(null), 3000);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Gagal menghapus laporan.');
+    } finally {
+      setIsSubmittingReportEdit(false);
+    }
+  };
+
   // Filter Attendances
   const filteredRecords = useMemo(() => {
     return attendances.filter((item) => {
@@ -494,7 +605,9 @@ function AdminDashboardInner() {
       'Tanggal',
       'Jam Masuk (WIB)',
       'Jarak Masuk (meter)',
+      'Foto Masuk (URL)',
       'Jam Pulang (WIB)',
+      'Foto Pulang (URL)',
       'Status',
       'Catatan',
     ];
@@ -506,7 +619,9 @@ function AdminDashboardInner() {
       formatDateID(item.check_in_time),
       formatTimeID(item.check_in_time),
       Math.round(item.check_in_distance_meters),
+      `"${item.check_in_photo_url || '-'}"`,
       item.check_out_time ? formatTimeID(item.check_out_time) : '-',
+      `"${item.check_out_photo_url || '-'}"`,
       item.status === 'present' ? 'Tepat Waktu' : item.status === 'late' ? 'Terlambat' : item.status,
       `"${item.notes || '-'}"`,
     ]);
@@ -674,7 +789,9 @@ function AdminDashboardInner() {
       'Status Kehadiran',
       'Jam Masuk (WIB)',
       'Jarak Presensi (m)',
+      'Foto Masuk (URL)',
       'Jam Pulang (WIB)',
+      'Foto Pulang (URL)',
       'Total Durasi Kerja',
       'Catatan',
     ];
@@ -694,7 +811,9 @@ function AdminDashboardInner() {
         `"${statusText}"`,
         att?.check_in_time ? formatTimeID(att.check_in_time) : '-',
         att?.check_in_distance_meters ? Math.round(att.check_in_distance_meters) : '-',
+        `"${att?.check_in_photo_url || '-'}"`,
         att?.check_out_time ? formatTimeID(att.check_out_time) : '-',
+        `"${att?.check_out_photo_url || '-'}"`,
         att ? formatDuration(att.check_in_time, att.check_out_time) : '-',
         `"${att?.notes || '-'}"`,
       ];
@@ -847,7 +966,9 @@ function AdminDashboardInner() {
       'Tanggal',
       'Jam Masuk (WIB)',
       'Jarak GPS (m)',
+      'Foto Masuk (URL)',
       'Jam Pulang (WIB)',
+      'Foto Pulang (URL)',
       'Durasi Kerja',
       'Status Kehadiran',
       'Catatan',
@@ -861,7 +982,9 @@ function AdminDashboardInner() {
         formatDateID(att.check_in_time),
         formatTimeID(att.check_in_time),
         Math.round(att.check_in_distance_meters),
+        `"${att.check_in_photo_url || '-'}"`,
         att.check_out_time ? formatTimeID(att.check_out_time) : '-',
+        `"${att.check_out_photo_url || '-'}"`,
         formatDuration(att.check_in_time, att.check_out_time),
         `"${statusText}"`,
         `"${att.notes || '-'}"`,
@@ -1335,22 +1458,78 @@ function AdminDashboardInner() {
                       {attendances.slice(0, 5).map((item) => (
                         <div key={item.id} className="p-4 hover:bg-slate-800/40 transition-colors flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
-                            {/* Photo Thumbnail */}
-                            <button
-                              onClick={() => setSelectedPhoto(item.check_in_photo_url)}
-                              className="relative w-11 h-13 rounded-xl overflow-hidden border border-amber-500/30 shrink-0 group cursor-pointer"
-                              title="Klik untuk zoom foto selfie"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={item.check_in_photo_url}
-                                alt="Selfie"
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                              />
-                              <div className="absolute inset-0 bg-black/30 group-hover:bg-transparent flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Eye className="w-3.5 h-3.5 text-white" />
-                              </div>
-                            </button>
+                            {/* Photo Thumbnails (Masuk & Pulang) */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                onClick={() =>
+                                  setSelectedPhoto({
+                                    url: item.check_in_photo_url,
+                                    title: 'Foto Selfie Masuk (Clock In)',
+                                    staffName: item.user?.full_name,
+                                    time: `${formatTimeID(item.check_in_time)} WIB`,
+                                    subtitle: `Presensi Masuk • Jarak: ${Math.round(
+                                      item.check_in_distance_meters
+                                    )}m`,
+                                  })
+                                }
+                                className="relative w-10 h-13 rounded-xl overflow-hidden border border-emerald-500/40 shrink-0 group cursor-pointer shadow-xs"
+                                title="Foto Masuk (Clock In)"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={item.check_in_photo_url}
+                                  alt="Selfie Masuk"
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                />
+                                <div className="absolute inset-0 bg-black/25 group-hover:bg-transparent flex items-end justify-center p-0.5">
+                                  <span className="text-[7px] text-emerald-300 bg-emerald-950/90 px-1 py-0.2 rounded font-extrabold">
+                                    IN
+                                  </span>
+                                </div>
+                              </button>
+
+                              {item.check_out_photo_url ? (
+                                <button
+                                  onClick={() =>
+                                    setSelectedPhoto({
+                                      url: item.check_out_photo_url!,
+                                      title: 'Foto Selfie Pulang (Clock Out)',
+                                      staffName: item.user?.full_name,
+                                      time: item.check_out_time
+                                        ? `${formatTimeID(item.check_out_time)} WIB`
+                                        : undefined,
+                                      subtitle: `Presensi Pulang • Jarak: ${
+                                        item.check_out_distance_meters
+                                          ? Math.round(item.check_out_distance_meters)
+                                          : 0
+                                      }m`,
+                                    })
+                                  }
+                                  className="relative w-10 h-13 rounded-xl overflow-hidden border border-amber-500/40 shrink-0 group cursor-pointer shadow-xs"
+                                  title="Foto Pulang (Clock Out)"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={item.check_out_photo_url}
+                                    alt="Selfie Pulang"
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                  />
+                                  <div className="absolute inset-0 bg-black/25 group-hover:bg-transparent flex items-end justify-center p-0.5">
+                                    <span className="text-[7px] text-amber-300 bg-amber-950/90 px-1 py-0.2 rounded font-extrabold">
+                                      OUT
+                                    </span>
+                                  </div>
+                                </button>
+                              ) : (
+                                <div
+                                  className="w-10 h-13 rounded-xl border border-dashed border-slate-700/80 flex flex-col items-center justify-center text-[7px] text-slate-500 shrink-0 bg-slate-950/40"
+                                  title="Belum Absen Pulang (Clock Out)"
+                                >
+                                  <span className="font-bold text-slate-400">OUT</span>
+                                  <span className="text-[7px] text-slate-500">Belum</span>
+                                </div>
+                              )}
+                            </div>
 
                             <div className="min-w-0">
                               <h4 className="text-xs font-bold text-white truncate">
@@ -1609,7 +1788,7 @@ function AdminDashboardInner() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
                       <tr>
-                        <th className="py-3 px-4">Foto Selfie</th>
+                        <th className="py-3 px-4">Foto (IN / OUT)</th>
                         <th className="py-3 px-4">Nama Staff</th>
                         <th className="py-3 px-4">Jabatan</th>
                         <th className="py-3 px-4">Tanggal</th>
@@ -1631,21 +1810,75 @@ function AdminDashboardInner() {
                         filteredRecords.map((item) => (
                           <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
                             <td className="py-3 px-4">
-                              <button
-                                onClick={() => setSelectedPhoto(item.check_in_photo_url)}
-                                className="w-10 h-13 rounded-lg overflow-hidden border border-amber-500/30 relative group shrink-0 cursor-pointer"
-                                title="Klik zoom foto"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={item.check_in_photo_url}
-                                  alt={item.user?.full_name}
-                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                                />
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <Eye className="w-3 h-3 text-white" />
-                                </div>
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() =>
+                                    setSelectedPhoto({
+                                      url: item.check_in_photo_url,
+                                      title: 'Foto Selfie Masuk (Clock In)',
+                                      staffName: item.user?.full_name,
+                                      time: `${formatTimeID(item.check_in_time)} WIB`,
+                                      subtitle: `Tanggal: ${formatDateID(item.check_in_time)} • Deviasi GPS: ${Math.round(
+                                        item.check_in_distance_meters
+                                      )}m`,
+                                    })
+                                  }
+                                  className="w-9 h-12 rounded-lg overflow-hidden border border-emerald-500/40 relative group shrink-0 cursor-pointer shadow-xs"
+                                  title="Klik zoom Foto Masuk (Clock In)"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={item.check_in_photo_url}
+                                    alt="Masuk"
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                  />
+                                  <span className="absolute bottom-0 inset-x-0 bg-emerald-950/90 text-[7px] text-emerald-300 font-black text-center py-0.5 tracking-tighter">
+                                    IN
+                                  </span>
+                                </button>
+
+                                {item.check_out_photo_url ? (
+                                  <button
+                                    onClick={() =>
+                                      setSelectedPhoto({
+                                        url: item.check_out_photo_url!,
+                                        title: 'Foto Selfie Pulang (Clock Out)',
+                                        staffName: item.user?.full_name,
+                                        time: item.check_out_time
+                                          ? `${formatTimeID(item.check_out_time)} WIB`
+                                          : undefined,
+                                        subtitle: `Tanggal: ${
+                                          item.check_out_time ? formatDateID(item.check_out_time) : '-'
+                                        } • Deviasi GPS: ${
+                                          item.check_out_distance_meters
+                                            ? Math.round(item.check_out_distance_meters)
+                                            : 0
+                                        }m`,
+                                      })
+                                    }
+                                    className="w-9 h-12 rounded-lg overflow-hidden border border-amber-500/40 relative group shrink-0 cursor-pointer shadow-xs"
+                                    title="Klik zoom Foto Pulang (Clock Out)"
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={item.check_out_photo_url}
+                                      alt="Pulang"
+                                      className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                    />
+                                    <span className="absolute bottom-0 inset-x-0 bg-amber-950/90 text-[7px] text-amber-300 font-black text-center py-0.5 tracking-tighter">
+                                      OUT
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <div
+                                    className="w-9 h-12 rounded-lg border border-dashed border-slate-700/70 flex flex-col items-center justify-center text-[8px] text-slate-500 shrink-0 bg-slate-950/40"
+                                    title="Belum Melakukan Clock Out"
+                                  >
+                                    <span className="font-bold text-slate-400">OUT</span>
+                                    <span className="text-[7px] text-slate-500">-</span>
+                                  </div>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 px-4 font-bold text-white whitespace-nowrap">
                               {item.user?.full_name}
@@ -1951,12 +2184,17 @@ function AdminDashboardInner() {
                         <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                           <div>
                             <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 truncate max-w-[180px]">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 truncate max-w-[150px]">
                                 {rep.zone_name}
                               </span>
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                {formatTimeID(rep.created_at)} WIB
-                              </span>
+                              <div className="text-right">
+                                <span className="text-[10px] text-amber-400 font-mono font-bold block">
+                                  📅 {formatDateID(rep.report_date || rep.created_at)}
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-mono block">
+                                  Input: {formatTimeID(rep.created_at)} WIB {rep.updated_at && rep.updated_at !== rep.created_at ? '• Diedit' : ''}
+                                </span>
+                              </div>
                             </div>
 
                             <h4 className="text-xs font-bold text-white">
@@ -1978,6 +2216,17 @@ function AdminDashboardInner() {
                             </span>
 
                             <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditReportModal(rep);
+                                }}
+                                className="px-2 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                title="Edit Laporan & Backdate (Admin)"
+                              >
+                                <Pencil className="w-2.5 h-2.5 text-amber-400" />
+                                <span>Edit</span>
+                              </button>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2037,8 +2286,18 @@ function AdminDashboardInner() {
                         filteredSiteReports.map((rep) => (
                           <tr key={rep.id} className="hover:bg-slate-800/40 transition-colors">
                             <td className="py-3 px-4 whitespace-nowrap font-mono text-slate-300">
-                              <div>{formatDateID(rep.created_at)}</div>
-                              <div className="text-[10px] text-amber-400/90">{formatTimeID(rep.created_at)} WIB</div>
+                              <div className="font-bold text-white flex items-center gap-1">
+                                <span>📅</span>
+                                <span>{formatDateID(rep.report_date || rep.created_at)}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                Input: {formatTimeID(rep.created_at)} WIB
+                              </div>
+                              {rep.updated_at && rep.updated_at !== rep.created_at && (
+                                <div className="text-[9px] text-amber-400 font-bold">
+                                  Update: {formatTimeID(rep.updated_at)} WIB
+                                </div>
+                              )}
                             </td>
                             <td className="py-3 px-4 whitespace-nowrap">
                               <div className="font-bold text-white">{rep.reporter?.full_name || 'Staff Lapangan'}</div>
@@ -2082,6 +2341,14 @@ function AdminDashboardInner() {
                             <td className="py-3 px-4 text-right whitespace-nowrap">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
+                                  onClick={() => openEditReportModal(rep)}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-semibold text-[10px] border border-amber-500/30 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                  title="Edit Laporan & Tanggal (Admin)"
+                                >
+                                  <Pencil className="w-3 h-3 text-amber-400" />
+                                  <span>Edit</span>
+                                </button>
+                                <button
                                   onClick={() => {
                                     const waText = generateWhatsAppReportText(rep);
                                     navigator.clipboard.writeText(waText);
@@ -2098,7 +2365,7 @@ function AdminDashboardInner() {
                                     setSelectedReportDetail(rep);
                                     setSelectedReportPhotoIndex(0);
                                   }}
-                                  className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 font-semibold text-[10px] border border-amber-500/30 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-[10px] border border-slate-700 transition-colors cursor-pointer inline-flex items-center gap-1"
                                 >
                                   <Eye className="w-3 h-3" />
                                   <span>Detail</span>
@@ -2432,17 +2699,55 @@ function AdminDashboardInner() {
                               </td>
 
                               <td className="px-4 py-3.5">
-                                {att?.check_in_photo_url ? (
-                                  <button
-                                    onClick={() => setSelectedPhoto(att.check_in_photo_url || null)}
-                                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer"
-                                    title="Lihat Selfie Presensi"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" />
-                                  </button>
-                                ) : (
-                                  <span className="text-slate-600">-</span>
-                                )}
+                                <div className="flex items-center gap-1.5">
+                                  {att?.check_in_photo_url ? (
+                                    <button
+                                      onClick={() =>
+                                        setSelectedPhoto({
+                                          url: att.check_in_photo_url,
+                                          title: 'Foto Selfie Masuk (Clock In)',
+                                          staffName: staff.full_name,
+                                          time: `${formatTimeID(att.check_in_time)} WIB`,
+                                          subtitle: `Presensi Masuk • Jarak: ${Math.round(
+                                            att.check_in_distance_meters
+                                          )}m`,
+                                        })
+                                      }
+                                      className="px-2 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Lihat Selfie Masuk (Clock In)"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      <span>IN</span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-slate-600">-</span>
+                                  )}
+
+                                  {att?.check_out_photo_url ? (
+                                    <button
+                                      onClick={() =>
+                                        setSelectedPhoto({
+                                          url: att.check_out_photo_url!,
+                                          title: 'Foto Selfie Pulang (Clock Out)',
+                                          staffName: staff.full_name,
+                                          time: att.check_out_time
+                                            ? `${formatTimeID(att.check_out_time)} WIB`
+                                            : undefined,
+                                          subtitle: `Presensi Pulang • Jarak: ${
+                                            att.check_out_distance_meters
+                                              ? Math.round(att.check_out_distance_meters)
+                                              : 0
+                                          }m`,
+                                        })
+                                      }
+                                      className="px-2 py-1 rounded-lg bg-amber-950/60 hover:bg-amber-900/60 text-amber-400 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Lihat Selfie Pulang (Clock Out)"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      <span>OUT</span>
+                                    </button>
+                                  ) : null}
+                                </div>
                               </td>
 
                               <td className="px-4 py-3.5 text-slate-400 text-[11px] max-w-xs truncate">
@@ -2755,17 +3060,57 @@ function AdminDashboardInner() {
                                 </td>
 
                                 <td className="px-4 py-3.5">
-                                  {att.check_in_photo_url ? (
-                                    <button
-                                      onClick={() => setSelectedPhoto(att.check_in_photo_url || null)}
-                                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer"
-                                      title="Lihat Selfie Presensi"
-                                    >
-                                      <Eye className="w-3.5 h-3.5" />
-                                    </button>
-                                  ) : (
-                                    <span className="text-slate-600">-</span>
-                                  )}
+                                  <div className="flex items-center gap-1.5">
+                                    {att.check_in_photo_url ? (
+                                      <button
+                                        onClick={() =>
+                                          setSelectedPhoto({
+                                            url: att.check_in_photo_url,
+                                            title: 'Foto Selfie Masuk (Clock In)',
+                                            staffName: selectedStaffProfile?.full_name,
+                                            time: `${formatTimeID(att.check_in_time)} WIB`,
+                                            subtitle: `Tanggal: ${formatDateID(
+                                              att.check_in_time
+                                            )} • Jarak: ${Math.round(att.check_in_distance_meters)}m`,
+                                          })
+                                        }
+                                        className="px-2 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="Lihat Selfie Masuk (Clock In)"
+                                      >
+                                        <Eye className="w-3 h-3" />
+                                        <span>IN</span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-600">-</span>
+                                    )}
+
+                                    {att.check_out_photo_url ? (
+                                      <button
+                                        onClick={() =>
+                                          setSelectedPhoto({
+                                            url: att.check_out_photo_url!,
+                                            title: 'Foto Selfie Pulang (Clock Out)',
+                                            staffName: selectedStaffProfile?.full_name,
+                                            time: att.check_out_time
+                                              ? `${formatTimeID(att.check_out_time)} WIB`
+                                              : undefined,
+                                            subtitle: `Tanggal: ${
+                                              att.check_out_time ? formatDateID(att.check_out_time) : '-'
+                                            } • Jarak: ${
+                                              att.check_out_distance_meters
+                                                ? Math.round(att.check_out_distance_meters)
+                                                : 0
+                                            }m`,
+                                          })
+                                        }
+                                        className="px-2 py-1 rounded-lg bg-amber-950/60 hover:bg-amber-900/60 text-amber-400 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="Lihat Selfie Pulang (Clock Out)"
+                                      >
+                                        <Eye className="w-3 h-3" />
+                                        <span>OUT</span>
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </td>
 
                                 <td className="px-4 py-3.5 text-slate-400 text-[11px] max-w-xs truncate">
@@ -3642,13 +3987,21 @@ function AdminDashboardInner() {
             <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-4 animate-in fade-in duration-200">
               <div className="w-full max-w-3xl flex items-center justify-between text-white z-10 bg-slate-900/90 px-4 py-3 rounded-2xl border border-slate-800">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30">
                       {selectedReportDetail.zone_name}
                     </span>
-                    <span className="text-xs text-slate-400">
-                      {formatDateTimeID(selectedReportDetail.created_at)} WIB
+                    <span className="text-xs font-bold text-white flex items-center gap-1 font-mono">
+                      📅 {formatDateID(selectedReportDetail.report_date || selectedReportDetail.created_at)}
                     </span>
+                    <span className="text-[10px] text-slate-400">
+                      (Input: {formatDateTimeID(selectedReportDetail.created_at)} WIB)
+                    </span>
+                    {selectedReportDetail.updated_at && selectedReportDetail.updated_at !== selectedReportDetail.created_at && (
+                      <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-500/30">
+                        Diupdate: {formatDateTimeID(selectedReportDetail.updated_at)} WIB
+                      </span>
+                    )}
                     {adminReportPhotos.length > 1 && (
                       <span className="text-[10px] font-bold bg-blue-600/80 text-white px-2 py-0.5 rounded-md">
                         Foto {selectedReportPhotoIndex + 1} dari {adminReportPhotos.length}
@@ -3659,12 +4012,22 @@ function AdminDashboardInner() {
                     {selectedReportDetail.reporter?.full_name} ({selectedReportDetail.reporter?.job_position})
                   </h3>
                 </div>
-                <button
-                  onClick={() => setSelectedReportDetail(null)}
-                  className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openEditReportModal(selectedReportDetail)}
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer"
+                    title="Edit Laporan & Backdate"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Edit Laporan</span>
+                  </button>
+                  <button
+                    onClick={() => setSelectedReportDetail(null)}
+                    className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <div className="relative flex-1 max-w-3xl w-full flex items-center justify-center my-3 overflow-hidden rounded-2xl bg-black border border-slate-800">
@@ -3794,6 +4157,242 @@ function AdminDashboardInner() {
       )}
 
       {/* ============================================================ */}
+      {/* MODAL: EDIT LAPORAN PROYEK & BACKDATE (ADMIN ONLY) */}
+      {/* ============================================================ */}
+      {editingReport && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-500">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Akses Administrator • Edit & Backdate Laporan</span>
+                </div>
+                <h3 className="font-bold text-sm text-white mt-0.5">
+                  Edit Laporan #{editingReport.id.slice(0, 8)}
+                </h3>
+              </div>
+              <button
+                onClick={() => setEditingReport(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {reportEditError && (
+              <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{reportEditError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateReport} className="space-y-3.5 text-xs">
+              {/* Backdate Tanggal Laporan */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <label className="block text-xs font-bold text-amber-400">
+                  📅 Tanggal Pekerjaan / Laporan (Bisa Backdate)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    required
+                    value={editReportDate}
+                    onChange={(e) => {
+                      setEditReportDate(e.target.value);
+                      setEditWorkDayName(getDayNameID(e.target.value));
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-amber-500/40 text-white font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <input
+                    type="text"
+                    required
+                    value={editWorkDayName}
+                    onChange={(e) => setEditWorkDayName(e.target.value)}
+                    placeholder="Nama Hari (contoh: Rabu)"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-amber-500/40 text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Diisi untuk tanggal berapa pekerjaan ini berlangsung. Waktu riwayat update sistem akan otomatis tercatat.
+                </p>
+              </div>
+
+              {/* Zona & Kategori */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Zona / Lokasi</label>
+                  <input
+                    type="text"
+                    required
+                    value={editZoneName}
+                    onChange={(e) => setEditZoneName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Kategori Pekerjaan</label>
+                  <input
+                    type="text"
+                    required
+                    value={editWorkCategory}
+                    onChange={(e) => setEditWorkCategory(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  />
+                </div>
+              </div>
+
+              {/* Uraian Pekerjaan Selesai */}
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">
+                  Uraian Pekerjaan Selesai <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={4}
+                  value={editWorkCompleted}
+                  onChange={(e) => setEditWorkCompleted(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-500/40 resize-none"
+                />
+              </div>
+
+              {/* Rencana Besok & Kendala */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Rencana Besok</label>
+                  <textarea
+                    rows={2}
+                    value={editWorkPlannedTomorrow}
+                    onChange={(e) => setEditWorkPlannedTomorrow(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Kendala Lapangan</label>
+                  <textarea
+                    rows={2}
+                    value={editObstacles}
+                    onChange={(e) => setEditObstacles(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Cuaca & Jumlah SDM */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Cuaca</label>
+                  <select
+                    value={editWeatherCondition}
+                    onChange={(e) => setEditWeatherCondition(e.target.value as WeatherCondition)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  >
+                    <option value="sunny">☀️ Cerah</option>
+                    <option value="cloudy">⛅ Mendung</option>
+                    <option value="rainy">🌧️ Hujan</option>
+                    <option value="heavy_rain">⛈️ Hujan Lebat</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Staff BBS</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editStaffTotal}
+                    onChange={(e) => setEditStaffTotal(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-300 mb-1">Manpower</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editManpowerTotal}
+                    onChange={(e) => setEditManpowerTotal(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Tombol Aksi */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = editingReport;
+                    setEditingReport(null);
+                    setDeletingReport(target);
+                  }}
+                  className="px-3 py-2 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Laporan</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingReport(null)}
+                    className="px-3 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingReportEdit}
+                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmittingReportEdit ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    )}
+                    <span>Simpan Perubahan Laporan</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: KONFIRMASI HAPUS LAPORAN (ADMIN ONLY) */}
+      {/* ============================================================ */}
+      {deletingReport && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/30 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto border border-rose-500/20">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center">
+              <h3 className="font-bold text-sm text-white">Hapus Laporan Proyek?</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Anda yakin ingin menghapus laporan <strong className="text-white">{deletingReport.zone_name}</strong> tanggal <strong className="text-white">{formatDateID(deletingReport.report_date || deletingReport.created_at)}</strong>? Aksi ini permanen.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                onClick={() => setDeletingReport(null)}
+                className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDeleteReport}
+                disabled={isSubmittingReportEdit}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-rose-950/40 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingReportEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>Ya, Hapus Laporan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
       {/* MODAL: ZOOM FOTO SELFIE LIGHTBOX */}
       {/* ============================================================ */}
       {selectedPhoto && (
@@ -3807,14 +4406,25 @@ function AdminDashboardInner() {
           <div className="max-w-md w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-amber-500/30">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={selectedPhoto}
+              src={typeof selectedPhoto === 'string' ? selectedPhoto : selectedPhoto.url}
               alt="Foto Absensi"
               className="w-full max-h-[75vh] object-contain bg-black"
             />
             <div className="p-4 bg-slate-900 text-white text-xs space-y-1">
-              <p className="font-bold text-amber-400">Bukti Foto Absensi Lapangan • Yayasan Guang Ji</p>
+              <p className="font-bold text-amber-400">
+                {typeof selectedPhoto === 'object' && selectedPhoto.title
+                  ? selectedPhoto.title
+                  : 'Bukti Foto Absensi Lapangan • Yayasan Guang Ji'}
+              </p>
+              {typeof selectedPhoto === 'object' && selectedPhoto.staffName && (
+                <p className="text-white font-medium text-xs">
+                  {selectedPhoto.staffName} {selectedPhoto.time ? `• ${selectedPhoto.time}` : ''}
+                </p>
+              )}
               <p className="text-slate-400 text-[11px]">
-                Foto terverifikasi dengan cap satelit satelit GPS dan stempel koordinat presisi.
+                {typeof selectedPhoto === 'object' && selectedPhoto.subtitle
+                  ? selectedPhoto.subtitle
+                  : 'Foto terverifikasi dengan cap satelit GPS dan stempel koordinat presisi.'}
               </p>
             </div>
           </div>
