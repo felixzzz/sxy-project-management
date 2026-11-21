@@ -118,16 +118,25 @@ function AdminDashboardInner() {
 
   // Reports Module State
   const [reportSubTab, setReportSubTab] = useState<'daily' | 'monthly' | 'staff'>('daily');
-  const [reportDate, setReportDate] = useState<string>(() => {
+  const [reportDate, setReportDate] = useState<string>('');
+  const [reportMonth, setReportMonth] = useState<number>(0);
+  const [reportYear, setReportYear] = useState<number>(2026);
+  const [reportStaffId, setReportStaffId] = useState<string>('');
+  const [todayStr, setTodayStr] = useState<string>('');
+  const [currentPrintDate, setCurrentPrintDate] = useState<string>('');
+
+  useEffect(() => {
     const today = new Date();
     const y = today.getFullYear();
     const m = String(today.getMonth() + 1).padStart(2, '0');
     const d = String(today.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  });
-  const [reportMonth, setReportMonth] = useState<number>(() => new Date().getMonth());
-  const [reportYear, setReportYear] = useState<number>(() => new Date().getFullYear());
-  const [reportStaffId, setReportStaffId] = useState<string>('');
+    const formatted = `${y}-${m}-${d}`;
+    setReportDate(formatted);
+    setReportMonth(today.getMonth());
+    setReportYear(today.getFullYear());
+    setTodayStr(formatted);
+    setCurrentPrintDate(formatDateID(today.toISOString()));
+  }, []);
 
   // Site Diary / Laporan Harian Proyek State
   const [dailyReports, setDailyReports] = useState<DailySiteReport[]>([]);
@@ -582,19 +591,18 @@ function AdminDashboardInner() {
 
       // Date filter
       if (dateFilter !== 'all') {
-        const itemDate = new Date(item.check_in_time);
-        const now = new Date();
         if (dateFilter === 'today') {
-          if (itemDate.toDateString() !== now.toDateString()) return false;
+          if (!todayStr || !item.check_in_time.startsWith(todayStr)) return false;
         } else if (dateFilter === '7days') {
-          const diffDays = (now.getTime() - itemDate.getTime()) / (1000 * 3600 * 24);
-          if (diffDays > 7) return false;
+          const itemTime = new Date(item.check_in_time).getTime();
+          const nowMs = todayStr ? new Date(`${todayStr}T23:59:59`).getTime() : 0;
+          if (nowMs && nowMs - itemTime > 7 * 86400000) return false;
         }
       }
 
       return true;
     });
-  }, [attendances, searchQuery, statusFilter, dateFilter]);
+  }, [attendances, searchQuery, statusFilter, dateFilter, todayStr]);
 
   // Export CSV
   const handleExportCSV = () => {
@@ -646,10 +654,10 @@ function AdminDashboardInner() {
   const metrics = useMemo(() => {
     const total = profiles.length;
     const activeStaff = profiles.filter((p) => p.is_active !== false).length;
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
 
-    const todayList = attendances.filter((a) => new Date(a.check_in_time) >= todayStart);
+    const todayList = todayStr
+      ? attendances.filter((a) => a.check_in_time.startsWith(todayStr))
+      : [];
     const presentToday = todayList.length;
     const lateToday = todayList.filter((a) => a.status === 'late').length;
     const onTimeToday = todayList.filter((a) => a.status === 'present').length;
@@ -672,7 +680,7 @@ function AdminDashboardInner() {
       attendanceRate,
       avgDist,
     };
-  }, [profiles, attendances]);
+  }, [profiles, attendances, todayStr]);
 
   // Ensure default reportStaffId is initialized
   useEffect(() => {
@@ -999,8 +1007,6 @@ function AdminDashboardInner() {
   };
 
   // Site Diary Filtering & Correlation Calculations
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-
   const reportsToday = useMemo(() => {
     return dailyReports.filter(
       (r) => r.report_date === todayStr || (r.created_at && r.created_at.startsWith(todayStr))
@@ -2499,7 +2505,7 @@ function AdminDashboardInner() {
                   </div>
                   <div className="text-right text-xs">
                     <p className="font-bold">Laporan Resmi Sistem Presensi</p>
-                    <p className="text-slate-600">Dicetak: {formatDateID(new Date().toISOString())}</p>
+                    <p className="text-slate-600">Dicetak: {currentPrintDate || '-'}</p>
                     <p className="text-slate-600">Oleh: {user.full_name} ({user.role})</p>
                   </div>
                 </div>

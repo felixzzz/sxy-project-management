@@ -156,21 +156,20 @@ export default function LaporanPage() {
   // Form Header State
   const [contractorName, setContractorName] = useState<string>('PT. BERCA BUANA SAKTI');
   const [workCategory, setWorkCategory] = useState<string>('PEKERJAAN PERSIAPAN');
-  const [reportDate, setReportDate] = useState<string>(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  });
-  const [workDayName, setWorkDayName] = useState<string>(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return getDayNameID(`${year}-${month}-${day}`);
-  });
+  const [reportDate, setReportDate] = useState<string>('');
+  const [workDayName, setWorkDayName] = useState<string>('Senin');
   const [workHours, setWorkHours] = useState<string>('Jam 08.00 sd 17.00 WIB');
+
+  // Inisialisasi tanggal dan hari saat client mount (menghindari error prerender Next.js)
+  useEffect(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const formatted = `${year}-${month}-${day}`;
+    setReportDate(formatted);
+    setWorkDayName(getDayNameID(formatted));
+  }, []);
 
   const handleDateChange = (newDate: string) => {
     setReportDate(newDate);
@@ -1081,7 +1080,7 @@ export default function LaporanPage() {
                   </div>
                 </div>
                 <p className="text-[10px] text-amber-700 dark:text-amber-400/90 leading-tight">
-                  Laporan akan tercatat sebagai pekerjaan tanggal <strong>{formatDateID(reportDate)}</strong>. Waktu input asli tetap tersimpan otomatis di riwayat sistem.
+                  Laporan akan tercatat sebagai pekerjaan tanggal <strong>{reportDate ? formatDateID(reportDate) : 'Hari Ini'}</strong>. Waktu input asli tetap tersimpan otomatis di riwayat sistem.
                 </p>
               </div>
             ) : (
@@ -1090,7 +1089,7 @@ export default function LaporanPage() {
                   <Calendar className="w-4 h-4 text-amber-500 shrink-0" />
                   <div>
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Hari {workDayName}, {formatDateID(reportDate)}
+                      Hari {workDayName}, {reportDate ? formatDateID(reportDate) : 'Hari Ini'}
                     </p>
                     <p className="text-[10px] text-slate-400">
                       Tanggal Hari Ini (Otomatis)
